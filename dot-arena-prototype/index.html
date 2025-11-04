@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DOT ARENA - Prototype</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #1a1a1a;
+      width: 100vw;
+      height: 100vh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+
+    #game-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .controls {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      color: #fff;
+      text-align: center;
+      padding: 15px 20px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+      border: 2px solid #E6007A;
+      max-width: 400px;
+      z-index: 1000;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .control-item {
+      padding: 8px;
+      background: rgba(230, 0, 122, 0.2);
+      border-radius: 6px;
+      border: 1px solid rgba(230, 0, 122, 0.4);
+    }
+
+    .control-key {
+      display: inline-block;
+      padding: 4px 10px;
+      background: #E6007A;
+      border-radius: 4px;
+      font-weight: bold;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .control-desc {
+      font-size: 11px;
+      opacity: 0.9;
+    }
+
+    .loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #E6007A;
+      font-size: 24px;
+      font-weight: bold;
+      text-align: center;
+      z-index: 2000;
+      background: rgba(0, 0, 0, 0.9);
+      padding: 30px 50px;
+      border-radius: 12px;
+      border: 2px solid #E6007A;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div class="loading" id="loading">Loading DOT ARENA...</div>
+
+    <div class="controls">
+      <div class="controls-grid">
+        <div class="control-item">
+          <div class="control-key">WASD</div>
+          <div class="control-desc">Move</div>
+        </div>
+        <div class="control-item">
+          <div class="control-key">LEFT CLICK</div>
+          <div class="control-desc">Shoot</div>
+        </div>
+        <div class="control-item">
+          <div class="control-key">RIGHT CLICK</div>
+          <div class="control-desc">Dash</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+
+  <script>
+    // Disable right-click context menu for the game
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      return false;
+    });
+
+    // Also prevent default touch gestures on mobile
+    document.addEventListener('touchmove', (e) => {
+      if (e.scale !== 1) {
+        e.preventDefault(); // Prevent pinch-zoom
+      }
+    }, { passive: false });
+  </script>
+</body>
+</html>
