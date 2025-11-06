@@ -329,9 +329,40 @@ export default class MobileControls {
         this.joystickDirection.x * speed,
         this.joystickDirection.y * speed
       );
+
+      // Handle animations for mobile movement
+      const isMoving = Math.abs(this.joystickDirection.x) > 0.1 || Math.abs(this.joystickDirection.y) > 0.1;
+
+      if (isMoving) {
+        // Play run animation if not already playing
+        if (this.player.sprite.anims.currentAnim?.key !== 'run') {
+          this.player.sprite.play('run');
+        }
+
+        // Flip sprite based on horizontal direction
+        if (Math.abs(this.joystickDirection.x) > 0.1) {
+          if (this.joystickDirection.x < 0) {
+            this.player.sprite.setFlipX(true);
+            this.player.lastDirection = -1;
+          } else {
+            this.player.sprite.setFlipX(false);
+            this.player.lastDirection = 1;
+          }
+        }
+      } else {
+        // Play idle animation when not moving
+        if (this.player.sprite.anims.currentAnim?.key !== 'idle') {
+          this.player.sprite.play('idle');
+        }
+      }
     } else if (!this.joystickActive && !this.player.isDashing) {
       // No joystick input - stop player
       this.player.sprite.setVelocity(0, 0);
+
+      // Play idle animation when stopped
+      if (this.player.sprite.anims.currentAnim?.key !== 'idle') {
+        this.player.sprite.play('idle');
+      }
     }
 
     // Update button visuals

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { WeaponGraphics } from '../graphics/WeaponGraphics.js';
 
 /**
  * Weapon class - Defines weapon behavior and properties
@@ -165,40 +166,11 @@ export class WeaponPickup {
   }
 
   createSprite(x, y) {
-    // Create graphics for weapon icon
-    const graphics = this.scene.add.graphics();
+    // Use detailed weapon graphics instead of simple lines
     const config = new Weapon(this.scene, this.weaponType).config;
 
-    // Draw weapon icon based on type
-    graphics.lineStyle(4, config.bulletColor, 1);
-
-    switch(this.weaponType) {
-      case 'rapid':
-        // ═══╤═══ (balanced gun)
-        graphics.lineBetween(-20, 0, 20, 0);
-        graphics.lineBetween(5, -8, 5, 8);
-        break;
-      case 'sniper':
-        // ═══════╤ (long barrel)
-        graphics.lineBetween(-25, 0, 25, 0);
-        graphics.lineBetween(20, -8, 20, 8);
-        break;
-      case 'shotgun':
-        // ═╤═════ (short, wide)
-        graphics.lineBetween(-15, 0, 15, 0);
-        graphics.lineBetween(-10, -10, -10, 10);
-        graphics.lineStyle(6, config.bulletColor, 1);
-        graphics.lineBetween(-5, 0, 15, 0);
-        break;
-      case 'burst':
-        // ═══╪═══ (medium with crosshair)
-        graphics.lineBetween(-20, 0, 20, 0);
-        graphics.lineBetween(0, -8, 0, 8);
-        break;
-    }
-
-    graphics.generateTexture(`weapon_${this.weaponType}`, 50, 50);
-    graphics.destroy();
+    // Generate detailed weapon texture using WeaponGraphics
+    const textureKey = WeaponGraphics.generateTexture(this.scene, this.weaponType, 1);
 
     // Create drop shadow for weapon pickup (darker for more contrast)
     this.shadow = this.scene.add.ellipse(x, y + 10, 50, 18, 0x000000, 0.5);
@@ -209,10 +181,10 @@ export class WeaponPickup {
     this.backingCircle = this.scene.add.circle(x, y, 35, 0x000000, 0.7);
     this.backingCircle.setDepth(7);
 
-    // Create sprite
-    this.sprite = this.scene.physics.add.sprite(x, y, `weapon_${this.weaponType}`);
+    // Create sprite with detailed graphics
+    this.sprite = this.scene.physics.add.sprite(x, y, textureKey);
     this.sprite.setDepth(8);
-    this.sprite.setScale(1.3); // Slightly larger for visibility
+    this.sprite.setScale(0.6); // Scale down since new graphics are more detailed and larger
 
     // Add enhanced holographic glow effect (brighter)
     this.glowCircle = this.scene.add.circle(x, y, 32, config.bulletColor, 0.4);

@@ -16,11 +16,50 @@ export default class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Load character sprite
-    this.load.image('character', '/src/assets/character.png');
+    // Load idle animation frames (frameIdle_0064.png to frameIdle_0141.png)
+    for (let i = 64; i <= 141; i++) {
+      const frameNum = i.toString().padStart(4, '0');
+      this.load.image(`character-idle-frame${i}`, `/src/assets/frameIdle_${frameNum}.png`);
+    }
+
+    // Load running animation frames (frame_0036.png to frame_0141.png)
+    for (let i = 36; i <= 141; i++) {
+      const frameNum = i.toString().padStart(4, '0');
+      this.load.image(`character-run-frame${i}`, `/src/assets/frame_${frameNum}.png`);
+    }
+
+    this.load.image('character', '/src/assets/character.png'); // Keep old one for backward compatibility
 
     // Create enhanced bullet graphics with geometric designs
     this.createBulletTextures();
+  }
+
+  createCharacterAnimations() {
+    // Create idle animation with new frame sprites (frameIdle_0064.png to frameIdle_0141.png)
+    const idleFrames = [];
+    for (let i = 64; i <= 141; i++) {
+      idleFrames.push({ key: `character-idle-frame${i}` });
+    }
+
+    this.anims.create({
+      key: 'idle',
+      frames: idleFrames,
+      frameRate: 60, // 60 fps for smooth animation
+      repeat: -1
+    });
+
+    // Create run animation with new frame sprites (frame_0036.png to frame_0141.png)
+    const runFrames = [];
+    for (let i = 36; i <= 141; i++) {
+      runFrames.push({ key: `character-run-frame${i}` });
+    }
+
+    this.anims.create({
+      key: 'run',
+      frames: runFrames,
+      frameRate: 60, // 60 fps for smooth animation
+      repeat: -1
+    });
   }
 
   createBulletTextures() {
@@ -101,54 +140,16 @@ export default class GameScene extends Phaser.Scene {
   }
 
   init() {
-    // This runs before preload
-    this.load.on('complete', () => {
-      // After loading, process the character image to make it white
-      this.processCharacterTexture();
-    });
-  }
-
-  processCharacterTexture() {
-    // Get the character texture
-    const texture = this.textures.get('character');
-    const canvas = texture.getSourceImage();
-
-    // Create a new canvas for the white version
-    const whiteCanvas = document.createElement('canvas');
-    whiteCanvas.width = canvas.width;
-    whiteCanvas.height = canvas.height;
-    const ctx = whiteCanvas.getContext('2d');
-
-    // Draw original image
-    ctx.drawImage(canvas, 0, 0);
-
-    // Get image data
-    const imageData = ctx.getImageData(0, 0, whiteCanvas.width, whiteCanvas.height);
-    const data = imageData.data;
-
-    // Convert all non-transparent pixels to white
-    for (let i = 0; i < data.length; i += 4) {
-      const alpha = data[i + 3];
-      if (alpha > 0) {
-        // Make it white while keeping the alpha
-        data[i] = 255;     // Red
-        data[i + 1] = 255; // Green
-        data[i + 2] = 255; // Blue
-        // Keep alpha as is: data[i + 3]
-      }
-    }
-
-    // Put the modified data back
-    ctx.putImageData(imageData, 0, 0);
-
-    // Replace the texture
-    this.textures.remove('character');
-    this.textures.addCanvas('character', whiteCanvas);
+    // No texture processing needed for character sprites
+    // Keep original colors and appearance
   }
 
   create() {
     // Create Polkadot pink gradient background
     this.createBackground();
+
+    // Create animations for character
+    this.createCharacterAnimations();
 
     // Create player at center of world (0, 0)
     this.player = new Player(this, 0, 0);
@@ -402,10 +403,10 @@ export default class GameScene extends Phaser.Scene {
     const centerY = 0;
     const radius = Math.max(worldWidth, worldHeight);
 
-    // Outer gradient circles (move slowest for depth)
+    // Outer gradient circles (move slowest for depth) - Dark grey/black shades
     const deepColors = [
-      { radius: 1.0, color: 0xA0004F, alpha: 1 },
-      { radius: 0.8, color: 0xC0005F, alpha: 1 }
+      { radius: 1.0, color: 0x1a1a1a, alpha: 1 },
+      { radius: 0.8, color: 0x2a2a2a, alpha: 1 }
     ];
 
     deepColors.forEach(({ radius: r, color }) => {
@@ -415,11 +416,11 @@ export default class GameScene extends Phaser.Scene {
     deepBgGraphics.setDepth(-10);
     deepBgGraphics.setScrollFactor(0.7); // Parallax effect
 
-    // PARALLAX LAYER 2: Middle background (85% speed)
+    // PARALLAX LAYER 2: Middle background (85% speed) - Medium grey shades
     const midBgGraphics = this.add.graphics();
     const midColors = [
-      { radius: 0.5, color: 0xE6007A, alpha: 1 },
-      { radius: 0.2, color: 0xFF1B8D, alpha: 1 }
+      { radius: 0.5, color: 0x3a3a3a, alpha: 1 },
+      { radius: 0.2, color: 0x4a4a4a, alpha: 1 }
     ];
 
     midColors.forEach(({ radius: r, color }) => {
@@ -454,8 +455,8 @@ export default class GameScene extends Phaser.Scene {
   createWorldBorders(width, height) {
     const graphics = this.add.graphics();
 
-    // Darker shade of pink for borders
-    const borderColor = 0x8B0046; // Darker pink
+    // Light grey for borders
+    const borderColor = 0x808080; // Medium grey
     const borderWidth = 8;
     const cornerRadius = 50;
 
@@ -477,8 +478,8 @@ export default class GameScene extends Phaser.Scene {
     const gridSize = 100;
     const graphics = this.add.graphics();
 
-    // Primary grid - more visible
-    graphics.lineStyle(1, 0xFFFFFF, 0.10);
+    // Primary grid - subtle grey
+    graphics.lineStyle(1, 0x555555, 0.15);
 
     // Vertical lines
     for (let x = -width / 2; x <= width / 2; x += gridSize) {
@@ -490,8 +491,8 @@ export default class GameScene extends Phaser.Scene {
       graphics.lineBetween(-width / 2, y, width / 2, y);
     }
 
-    // Major grid lines (every 500px) - more visible
-    graphics.lineStyle(2, 0xE6007A, 0.25);
+    // Major grid lines (every 500px) - lighter grey
+    graphics.lineStyle(2, 0x666666, 0.3);
 
     for (let x = -width / 2; x <= width / 2; x += 500) {
       graphics.lineBetween(x, -height / 2, x, height / 2);
@@ -501,8 +502,8 @@ export default class GameScene extends Phaser.Scene {
       graphics.lineBetween(-width / 2, y, width / 2, y);
     }
 
-    // Center cross lines - highlighted
-    graphics.lineStyle(3, 0xFF1B8D, 0.3);
+    // Center cross lines - white
+    graphics.lineStyle(3, 0x888888, 0.4);
     graphics.lineBetween(0, -height / 2, 0, height / 2);
     graphics.lineBetween(-width / 2, 0, width / 2, 0);
 
@@ -514,7 +515,7 @@ export default class GameScene extends Phaser.Scene {
     graphics.setDepth(-1);
     graphics.setScrollFactor(0.9); // Parallax - move slower than foreground
 
-    // Corner decorations - hexagons
+    // Corner decorations - hexagons in grey tones
     const corners = [
       { x: -1200, y: -1200 },
       { x: 1200, y: -1200 },
@@ -524,19 +525,19 @@ export default class GameScene extends Phaser.Scene {
 
     corners.forEach(corner => {
       // Large hexagon
-      graphics.lineStyle(3, 0xE6007A, 0.2);
+      graphics.lineStyle(3, 0x666666, 0.2);
       this.drawHexagonAt(graphics, corner.x, corner.y, 80);
 
       // Medium hexagon
-      graphics.lineStyle(2, 0xFF1B8D, 0.15);
+      graphics.lineStyle(2, 0x777777, 0.15);
       this.drawHexagonAt(graphics, corner.x, corner.y, 50);
 
       // Small hexagon
-      graphics.lineStyle(1, 0xFFFFFF, 0.1);
+      graphics.lineStyle(1, 0x888888, 0.1);
       this.drawHexagonAt(graphics, corner.x, corner.y, 30);
 
       // Corner accent lines
-      graphics.lineStyle(2, 0xE6007A, 0.2);
+      graphics.lineStyle(2, 0x666666, 0.2);
       const lineLength = 60;
       if (corner.x < 0) {
         graphics.lineBetween(corner.x, corner.y, corner.x + lineLength, corner.y);
@@ -560,7 +561,7 @@ export default class GameScene extends Phaser.Scene {
 
     decorPositions.forEach((pos, i) => {
       const shape = i % 3;
-      graphics.lineStyle(1, 0xE6007A, 0.1);
+      graphics.lineStyle(1, 0x666666, 0.1);
 
       switch (shape) {
         case 0: // Circle
@@ -608,7 +609,7 @@ export default class GameScene extends Phaser.Scene {
     this.ambientParticles = [];
     const particleCount = 30;
     const shapes = ['circle', 'triangle', 'diamond', 'square'];
-    const colors = [0xE6007A, 0xFF1B8D, 0xFFFFFF, 0xFF00FF, 0x00FFFF];
+    const colors = [0x666666, 0x777777, 0x888888, 0x999999, 0xaaaaaa];
 
     for (let i = 0; i < particleCount; i++) {
       const x = Phaser.Math.Between(-1400, 1400);
@@ -688,12 +689,12 @@ export default class GameScene extends Phaser.Scene {
     const graphics = this.add.graphics();
     graphics.setDepth(-1);
 
-    // Create 4 quadrant markers (NE, NW, SE, SW)
+    // Create 4 quadrant markers (NE, NW, SE, SW) in grey tones
     const zones = [
-      { x: 750, y: -750, label: 'NE', color: 0xFF00FF },
-      { x: -750, y: -750, label: 'NW', color: 0x00FFFF },
-      { x: 750, y: 750, label: 'SE', color: 0xFF8800 },
-      { x: -750, y: 750, label: 'SW', color: 0xFFFFFF }
+      { x: 750, y: -750, label: 'NE', color: 0x888888 },
+      { x: -750, y: -750, label: 'NW', color: 0x999999 },
+      { x: 750, y: 750, label: 'SE', color: 0x777777 },
+      { x: -750, y: 750, label: 'SW', color: 0xaaaaaa }
     ];
 
     zones.forEach(zone => {
@@ -729,7 +730,7 @@ export default class GameScene extends Phaser.Scene {
     // Create static group for walls
     this.walls = this.physics.add.staticGroup();
 
-    const wallColor = 0x8B0046; // Dark pink to match borders
+    const wallColor = 0xcccccc; // Light grey/white-ish
     const cornerRadius = 8;
 
     // Symmetrical wall layout - 4-way symmetry covering entire map
@@ -830,19 +831,19 @@ export default class GameScene extends Phaser.Scene {
       );
 
       // Lighter top edge (simulated lighting from above)
-      graphics.fillStyle(0xFF1B8D, 0.3);
+      graphics.fillStyle(0xeeeeee, 0.4);
       graphics.fillRoundedRect(0, 0, config.width, 4, cornerRadius);
 
       // Darker bottom edge (depth shadow)
-      graphics.fillStyle(0x6B0036, 0.5);
+      graphics.fillStyle(0x999999, 0.5);
       graphics.fillRoundedRect(0, config.height - 4, config.width, 4, cornerRadius);
 
       // Subtle left highlight
-      graphics.fillStyle(0xFF1B8D, 0.2);
+      graphics.fillStyle(0xeeeeee, 0.3);
       graphics.fillRoundedRect(0, 0, 3, config.height, cornerRadius);
 
       // Subtle right shadow
-      graphics.fillStyle(0x6B0036, 0.3);
+      graphics.fillStyle(0x999999, 0.4);
       graphics.fillRoundedRect(config.width - 3, 0, 3, config.height, cornerRadius);
 
       // Add bright border for better contrast
@@ -939,13 +940,13 @@ export default class GameScene extends Phaser.Scene {
     this.minimapBg.fillStyle(0x000000, 0.8);
     this.minimapBg.fillRoundedRect(minimapX, minimapY, minimapSize, minimapSize, cornerRadius);
 
-    // Draw border with darker pink and rounded corners
-    const borderColor = 0x8B0046; // Darker pink to match world bounds
+    // Draw border with grey and rounded corners
+    const borderColor = 0x808080; // Grey to match world bounds
     this.minimapBg.lineStyle(3, borderColor, 1);
     this.minimapBg.strokeRoundedRect(minimapX, minimapY, minimapSize, minimapSize, cornerRadius);
 
     // Draw grid lines (quadrants)
-    this.minimapBg.lineStyle(1, 0xE6007A, 0.3);
+    this.minimapBg.lineStyle(1, 0x666666, 0.3);
     this.minimapBg.lineBetween(
       minimapX + minimapSize / 2, minimapY,
       minimapX + minimapSize / 2, minimapY + minimapSize
@@ -974,7 +975,7 @@ export default class GameScene extends Phaser.Scene {
     this.minimapObstacles.setDepth(1000);
 
     // Draw obstacles on minimap (walls)
-    this.minimapObstacles.fillStyle(0x8B0046, 0.6); // Dark pink
+    this.minimapObstacles.fillStyle(0xcccccc, 0.6); // Light grey
     this.walls.children.entries.forEach(wall => {
       const wallMinimapX = minimapX + ((wall.x + worldWidth / 2) / worldWidth) * minimapSize;
       const wallMinimapY = minimapY + ((wall.y + worldHeight / 2) / worldHeight) * minimapSize;
@@ -1030,9 +1031,9 @@ export default class GameScene extends Phaser.Scene {
     const viewportX = playerMinimapX - minimapViewportWidth / 2;
     const viewportY = playerMinimapY - minimapViewportHeight / 2;
 
-    // Draw viewport rectangle with pink color to match theme
+    // Draw viewport rectangle with white/grey color
     this.minimapViewport.clear();
-    const viewportColor = 0xFF1B8D; // Bright pink to match Polkadot theme
+    const viewportColor = 0xbbbbbb; // Light grey
     this.minimapViewport.lineStyle(2, viewportColor, 0.9);
     this.minimapViewport.strokeRect(
       viewportX,
@@ -1124,13 +1125,13 @@ export default class GameScene extends Phaser.Scene {
       this.minimapBg.fillStyle(0x000000, 0.8);
       this.minimapBg.fillRoundedRect(newMinimapX, y, size, size, cornerRadius);
 
-      // Redraw border with darker pink and rounded corners
-      const borderColor = 0x8B0046; // Darker pink
+      // Redraw border with grey and rounded corners
+      const borderColor = 0x808080; // Grey
       this.minimapBg.lineStyle(3, borderColor, 1);
       this.minimapBg.strokeRoundedRect(newMinimapX, y, size, size, cornerRadius);
 
       // Redraw grid lines
-      this.minimapBg.lineStyle(1, 0xE6007A, 0.3);
+      this.minimapBg.lineStyle(1, 0x666666, 0.3);
       this.minimapBg.lineBetween(
         newMinimapX + size / 2, y,
         newMinimapX + size / 2, y + size
@@ -1336,124 +1337,14 @@ export default class GameScene extends Phaser.Scene {
   }
 
   showDeathScreen() {
-    // Pause game
-    this.physics.pause();
-
-    // Create overlay
-    const overlay = this.add.rectangle(
-      this.cameras.main.scrollX + this.cameras.main.width / 2,
-      this.cameras.main.scrollY + this.cameras.main.height / 2,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      0x000000,
-      0.8
-    );
-    overlay.setScrollFactor(0);
-    overlay.setDepth(2000);
-
-    // Calculate stats
-    const entryFee = 1.0;
-    const earnings = this.dotEarned;
-    const netProfit = earnings - entryFee;
-    const battleEarned = this.kills * 5 + 10; // Base calculation
-
-    // Format survival time
-    const minutes = Math.floor(this.survivalTime / 60);
-    const seconds = this.survivalTime % 60;
-    const survivalText = `${minutes}m ${seconds}s`;
-
-    // Create death screen UI
-    const centerX = this.cameras.main.width / 2;
-    const centerY = this.cameras.main.height / 2;
-
-    // Title
-    const title = this.add.text(centerX, centerY - 200, 'YOU WERE ELIMINATED', {
-      fontSize: '48px',
-      color: '#FF0000',
-      fontWeight: 'bold',
-      stroke: '#000000',
-      strokeThickness: 6
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
-
-    // Stats
-    const statsY = centerY - 100;
-    const lineHeight = 40;
-
-    const stats = [
-      `Survived: ${survivalText}`,
-      `Kills: ${this.kills}`,
-      `Weapon: ${this.player.currentWeapon.getName()}`,
-      '',
-      `Earnings: +${earnings.toFixed(2)} DOT`,
-      `Entry Fee: -${entryFee.toFixed(2)} DOT`,
-      '─────────────────',
-      `Net Profit: ${netProfit >= 0 ? '+' : ''}${netProfit.toFixed(2)} DOT ${netProfit >= 0 ? '✅' : '❌'}`,
-      '',
-      `BATTLE Earned: +${battleEarned} tokens`
-    ];
-
-    stats.forEach((stat, i) => {
-      const color = stat.includes('Net Profit') ? (netProfit >= 0 ? '#00FF00' : '#FF0000') : '#FFFFFF';
-      this.add.text(centerX, statsY + (i * lineHeight), stat, {
-        fontSize: '24px',
-        color: color,
-        fontWeight: stat.includes('Net Profit') ? 'bold' : 'normal',
-        stroke: '#000000',
-        strokeThickness: 4
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
-    });
-
-    // Buttons
-    const buttonY = centerY + 250;
-
-    // Play Again button
-    const playAgainButton = this.add.rectangle(centerX - 150, buttonY, 250, 60, 0xE6007A);
-    playAgainButton.setInteractive();
-    playAgainButton.setScrollFactor(0);
-    playAgainButton.setDepth(2001);
-
-    const playAgainText = this.add.text(centerX - 150, buttonY, 'Play Again - 1 DOT', {
-      fontSize: '20px',
-      color: '#FFFFFF',
-      fontWeight: 'bold'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(2002);
-
-    playAgainButton.on('pointerdown', () => {
-      this.scene.restart();
-    });
-
-    playAgainButton.on('pointerover', () => {
-      playAgainButton.setFillStyle(0xFF1B8D);
-    });
-
-    playAgainButton.on('pointerout', () => {
-      playAgainButton.setFillStyle(0xE6007A);
-    });
-
-    // Exit button
-    const exitButton = this.add.rectangle(centerX + 150, buttonY, 200, 60, 0x552BBF);
-    exitButton.setInteractive();
-    exitButton.setScrollFactor(0);
-    exitButton.setDepth(2001);
-
-    const exitText = this.add.text(centerX + 150, buttonY, 'Exit to Lobby', {
-      fontSize: '20px',
-      color: '#FFFFFF',
-      fontWeight: 'bold'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(2002);
-
-    exitButton.on('pointerdown', () => {
-      console.log('🚪 Exiting to lobby...');
-      // In a real implementation, this would go to main menu
-      this.scene.restart();
-    });
-
-    exitButton.on('pointerover', () => {
-      exitButton.setFillStyle(0x6633CC);
-    });
-
-    exitButton.on('pointerout', () => {
-      exitButton.setFillStyle(0x552BBF);
+    // Transition to elimination scene with player stats
+    this.scene.start('EliminationScene', {
+      playerStats: {
+        kills: this.kills,
+        survivalTime: this.survivalTime,
+        placement: 0, // Will be calculated server-side in multiplayer
+        totalPlayers: 100 // Default for display
+      }
     });
   }
 

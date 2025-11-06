@@ -6,17 +6,15 @@ export default class Enemy {
     this.scene = scene;
     this.player = player;
 
-    // Create drop shadow first (renders behind sprite)
-    this.shadow = scene.add.ellipse(x, y + 8, 45, 15, 0x000000, 0.4);
-    this.shadow.setDepth(9);
-    this.shadow.setBlendMode(Phaser.BlendModes.MULTIPLY);
-
-    // Create sprite (red-tinted character)
-    this.sprite = scene.physics.add.sprite(x, y, 'character');
-    this.sprite.setScale(0.15);
+    // Create sprite using the first frame of the idle animation with soft red tint
+    this.sprite = scene.physics.add.sprite(x, y, 'character-idle-frame64');
+    this.sprite.setScale(0.08); // Match player scale for 1024x1024 images
     this.sprite.setCollideWorldBounds(true);
     this.sprite.setDepth(10);
-    this.sprite.setTint(0xFF0000); // Red tint for enemies
+    this.sprite.setTint(0xffaaaa); // Soft red tint that doesn't override details
+
+    // Play idle animation initially
+    this.sprite.play('idle');
 
     // Store reference to this enemy in the sprite
     this.sprite.enemyRef = this;
@@ -58,11 +56,6 @@ export default class Enemy {
   update() {
     if (!this.sprite.active) return;
 
-    // Update shadow position to follow enemy
-    if (this.shadow) {
-      this.shadow.setPosition(this.sprite.x, this.sprite.y + 8);
-    }
-
     // Check distance to player
     const distanceToPlayer = Phaser.Math.Distance.Between(
       this.sprite.x,
@@ -85,8 +78,8 @@ export default class Enemy {
       this.patrol();
     }
 
-    // Rotate to face movement direction
-    this.updateRotation();
+    // Handle animations and sprite flipping
+    this.updateAnimation();
   }
 
   patrol() {
@@ -182,14 +175,29 @@ export default class Enemy {
     });
   }
 
-  updateRotation() {
-    // Rotate to face movement direction
-    if (this.sprite.body.velocity.length() > 0) {
-      const angle = Math.atan2(
-        this.sprite.body.velocity.y,
-        this.sprite.body.velocity.x
-      );
-      this.sprite.rotation = angle;
+  updateAnimation() {
+    // Check if moving
+    const isMoving = this.sprite.body.velocity.length() > 10;
+
+    if (isMoving) {
+      // Play run animation if not already playing
+      if (this.sprite.anims.currentAnim?.key !== 'run') {
+        this.sprite.play('run');
+      }
+
+      // Flip sprite based on horizontal movement direction
+      if (Math.abs(this.sprite.body.velocity.x) > 10) {
+        if (this.sprite.body.velocity.x < 0) {
+          this.sprite.setFlipX(true);
+        } else {
+          this.sprite.setFlipX(false);
+        }
+      }
+    } else {
+      // Play idle animation when stopped
+      if (this.sprite.anims.currentAnim?.key !== 'idle') {
+        this.sprite.play('idle');
+      }
     }
   }
 
@@ -219,22 +227,22 @@ export default class Enemy {
       this.scene.enemyBullets
     );
 
-    // Visual feedback - flash with weapon color
+    // Visual feedback - flash with weapon color but keep soft red tint
     const weaponColor = this.currentWeapon.getVisualColor();
     this.sprite.setTint(weaponColor);
     this.scene.time.delayedCall(80, () => {
-      this.sprite.setTint(0xFF0000);
+      this.sprite.setTint(0xffaaaa); // Return to soft red tint
     });
   }
 
   takeDamage(amount = 1) {
     this.hp -= amount;
 
-    // Red flash on damage
-    this.sprite.setTint(0xFF8888);
+    // Brighter flash on damage
+    this.sprite.setTint(0xffcccc);
     this.scene.time.delayedCall(100, () => {
       if (this.hp > 0) {
-        this.sprite.setTint(0xFF0000);
+        this.sprite.setTint(0xffaaaa); // Return to soft red tint
       }
     });
 
@@ -244,17 +252,15 @@ export default class Enemy {
   }
 
   die() {
-    // Death animation (including shadow)
+    // Death animation - fade out
     this.scene.tweens.add({
-      targets: [this.sprite, this.shadow],
-      rotation: this.sprite.rotation + Math.PI * 3,
+      targets: [this.sprite],
       alpha: 0,
       scale: 0,
       duration: 500,
       ease: 'Power2',
       onComplete: () => {
         this.sprite.destroy();
-        if (this.shadow) this.shadow.destroy();
       }
     });
 
@@ -265,9 +271,6 @@ export default class Enemy {
   destroy() {
     if (this.sprite) {
       this.sprite.destroy();
-    }
-    if (this.shadow) {
-      this.shadow.destroy();
     }
   }
 }

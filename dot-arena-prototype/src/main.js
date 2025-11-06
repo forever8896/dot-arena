@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
+import MenuScene from './scenes/MenuScene.js';
 import GameScene from './scenes/GameScene.js';
+import EliminationScene from './scenes/EliminationScene.js';
 
 // Remove loading text once Phaser loads
 window.addEventListener('load', () => {
@@ -28,7 +30,7 @@ const config = {
       debug: false // Set to true to see collision boxes
     }
   },
-  scene: [GameScene],
+  scene: [MenuScene, GameScene, EliminationScene],
   backgroundColor: '#E6007A',
   scale: {
     mode: Phaser.Scale.RESIZE,

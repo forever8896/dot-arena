@@ -15,27 +15,22 @@ export default class Player {
     // Detect if mobile device
     this.isMobile = this.scene.sys.game.device.input.touch;
 
-    // Create drop shadow first (renders behind sprite)
-    this.shadow = scene.add.ellipse(x, y + 8, 45, 15, 0x000000, 0.5);
-    this.shadow.setDepth(9);
-    this.shadow.setBlendMode(Phaser.BlendModes.MULTIPLY);
+    // Create shadow ellipse below character
+    this.shadow = scene.add.ellipse(x, y, 60, 20, 0x000000, 0.3);
+    this.shadow.setDepth(9); // Just below player
 
-    // Create cyan outline/glow for player (behind sprite)
-    this.playerGlow = scene.add.circle(x, y, 35, 0x00FFFF, 0.3);
-    this.playerGlow.setDepth(9);
-    this.playerGlow.setBlendMode(Phaser.BlendModes.ADD);
-
-    // Create sprite
-    this.sprite = scene.physics.add.sprite(x, y, 'character');
-    this.sprite.setScale(0.15); // Scale down the Polkadot logo
+    // Create sprite using the first frame of the idle animation
+    this.sprite = scene.physics.add.sprite(x, y, 'character-idle-frame64');
+    this.sprite.setScale(0.08); // Scale down for 1024x1024 images
     this.sprite.setCollideWorldBounds(true); // Keep player within world bounds
     this.sprite.setDepth(10);
 
-    // Character is already white from texture processing in GameScene
-    // No tint needed
+    // Play idle animation initially
+    this.sprite.play('idle');
 
     // Movement properties
     this.speed = 250; // pixels per second
+    this.lastDirection = 1; // 1 for right, -1 for left (for sprite flipping)
     this.hp = 3;
     this.maxHp = 3;
 
@@ -98,14 +93,6 @@ export default class Player {
   }
 
   update() {
-    // Update shadow and glow position to follow player
-    if (this.shadow) {
-      this.shadow.setPosition(this.sprite.x, this.sprite.y + 8);
-    }
-    if (this.playerGlow) {
-      this.playerGlow.setPosition(this.sprite.x, this.sprite.y);
-    }
-
     // Handle movement based on device
     if (this.isMobile && this.mobileControls) {
       // Mobile controls update (handles joystick movement)
@@ -113,6 +100,23 @@ export default class Player {
     } else {
       // Desktop keyboard movement
       this.handleMovement();
+    }
+
+    // Update shadow position to follow player
+    if (this.shadow) {
+      // Position shadow at player's feet (slightly below center)
+      // Sprite height is approximately 1024 * 0.08 = 81.92 pixels
+      // Offset by 35% of height for better positioning
+      const spriteHeight = 1024 * 0.08; // Original height * scale
+      this.shadow.setPosition(this.sprite.x, this.sprite.y + (spriteHeight * 0.35));
+
+      // Make shadow slightly larger when running
+      const isRunning = this.sprite.anims.currentAnim?.key === 'run';
+      if (isRunning) {
+        this.shadow.setScale(1.1, 1.1);
+      } else {
+        this.shadow.setScale(1.0, 1.0);
+      }
     }
 
     // Handle auto-aim targeting
@@ -127,9 +131,12 @@ export default class Player {
       const blinkSpeed = 100; // milliseconds
       const shouldShow = Math.floor(this.scene.time.now / blinkSpeed) % 2 === 0;
       this.sprite.visible = shouldShow;
+      // Also hide shadow when blinking
+      if (this.shadow) this.shadow.visible = shouldShow;
     } else {
       // Ensure sprite is always visible when not invulnerable
       this.sprite.visible = true;
+      if (this.shadow) this.shadow.visible = true;
     }
   }
 
@@ -172,12 +179,33 @@ export default class Player {
     // Apply velocity
     this.sprite.setVelocity(velocity.x, velocity.y);
 
-    // Add slight movement animation (subtle scale pulse when moving)
-    if (velocity.length() > 0) {
-      const scale = 0.15 + Math.sin(this.scene.time.now * 0.01) * 0.005;
-      this.sprite.setScale(scale);
+    // Handle animations and sprite flipping based on movement
+    const isMoving = velocity.length() > 0;
+
+    if (isMoving) {
+      // Play run animation if not already playing
+      if (this.sprite.anims.currentAnim?.key !== 'run') {
+        this.sprite.play('run');
+      }
+
+      // Determine direction and flip sprite accordingly
+      // Only flip when there's horizontal movement
+      if (velocity.x !== 0) {
+        if (velocity.x < 0) {
+          // Moving left - flip sprite
+          this.sprite.setFlipX(true);
+          this.lastDirection = -1;
+        } else {
+          // Moving right - don't flip (default orientation)
+          this.sprite.setFlipX(false);
+          this.lastDirection = 1;
+        }
+      }
     } else {
-      this.sprite.setScale(0.15);
+      // Play idle animation when stopped
+      if (this.sprite.anims.currentAnim?.key !== 'idle') {
+        this.sprite.play('idle');
+      }
     }
   }
 
@@ -233,15 +261,16 @@ export default class Player {
     // Create afterimage trail
     for (let i = 0; i < 5; i++) {
       this.scene.time.delayedCall(i * 40, () => {
+        // Get current texture from the sprite
+        const currentTexture = this.sprite.texture.key;
         const ghost = this.scene.add.sprite(
           this.sprite.x,
           this.sprite.y,
-          'character'
+          currentTexture
         );
-        ghost.setScale(0.15);
-        ghost.setRotation(this.sprite.rotation);
+        ghost.setScale(0.08); // Match new scale
+        ghost.setFlipX(this.sprite.flipX); // Match the flip state
         ghost.setAlpha(0.5 - (i * 0.08));
-        ghost.setTint(0xFFFFFF);
         ghost.setDepth(9);
 
         this.scene.tweens.add({
@@ -276,7 +305,8 @@ export default class Player {
       this.currentWeapon.type
     );
 
-    // Rotate to face target
+    // Don't rotate sprite - keep character level for Paper Mario style
+    // Store angle for shooting direction only
     if (target && target.sprite) {
       const angle = Phaser.Math.Angle.Between(
         this.sprite.x,
@@ -284,7 +314,7 @@ export default class Player {
         target.sprite.x,
         target.sprite.y
       );
-      this.sprite.rotation = angle;
+      this.aimAngle = angle; // Store for shooting, don't apply to sprite rotation
     }
 
     // Update visual indicators
@@ -311,11 +341,11 @@ export default class Player {
 
     this.lastFired = now;
 
-    // Use weapon to shoot
+    // Use weapon to shoot with aim angle instead of sprite rotation
     this.currentWeapon.shoot(
       this.sprite.x,
       this.sprite.y,
-      this.sprite.rotation,
+      this.aimAngle || 0,
       bulletsGroup
     );
 
@@ -336,7 +366,7 @@ export default class Player {
   }
 
   createMuzzleFlash() {
-    const angle = this.sprite.rotation;
+    const angle = this.aimAngle || 0;
     const distance = 30;
     const x = this.sprite.x + Math.cos(angle) * distance;
     const y = this.sprite.y + Math.sin(angle) * distance;
@@ -527,10 +557,9 @@ export default class Player {
       this.mobileControls = null;
     }
 
-    // Death animation - spin and fade out (including shadow)
+    // Death animation - fade out sprite and shadow
     this.scene.tweens.add({
       targets: [this.sprite, this.shadow],
-      rotation: this.sprite.rotation + Math.PI * 4,
       alpha: 0,
       scale: 0,
       duration: 1000,
