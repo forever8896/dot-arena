@@ -16,26 +16,36 @@ export default class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Load idle animation frames (frameIdle_0064.png to frameIdle_0141.png)
+    // Load idle animation frames
+    // Source: AI-generated 5s video processed with ffmpeg color keying
+    // Files: frameIdle_0064.png to frameIdle_0141.png (78 frames @ 60fps)
     for (let i = 64; i <= 141; i++) {
       const frameNum = i.toString().padStart(4, '0');
       this.load.image(`character-idle-frame${i}`, `/src/assets/frameIdle_${frameNum}.png`);
     }
 
-    // Load running animation frames (frame_0036.png to frame_0141.png)
+    // Load running animation frames
+    // Source: AI-generated 5s video processed with ffmpeg color keying
+    // Files: frame_0036.png to frame_0141.png (106 frames @ 60fps)
     for (let i = 36; i <= 141; i++) {
       const frameNum = i.toString().padStart(4, '0');
       this.load.image(`character-run-frame${i}`, `/src/assets/frame_${frameNum}.png`);
     }
 
-    this.load.image('character', '/src/assets/character.png'); // Keep old one for backward compatibility
+    this.load.image('character', '/src/assets/character.png'); // Fallback static sprite
+
+    // Load weapon pickup sprites
+    this.load.image('pickup-shotgun', '/src/assets/shotgunpickup.png');
+    this.load.image('pickup-burst', '/src/assets/assaultrifflepickup.png');
+    this.load.image('pickup-sniper', '/src/assets/sniperpickup.png');
 
     // Create enhanced bullet graphics with geometric designs
     this.createBulletTextures();
   }
 
   createCharacterAnimations() {
-    // Create idle animation with new frame sprites (frameIdle_0064.png to frameIdle_0141.png)
+    // Idle animation: 78 frames (frameIdle_0064 to frameIdle_0141)
+    // Creates smooth looping idle breathing/slight movement animation
     const idleFrames = [];
     for (let i = 64; i <= 141; i++) {
       idleFrames.push({ key: `character-idle-frame${i}` });
@@ -44,11 +54,12 @@ export default class GameScene extends Phaser.Scene {
     this.anims.create({
       key: 'idle',
       frames: idleFrames,
-      frameRate: 60, // 60 fps for smooth animation
-      repeat: -1
+      frameRate: 60, // 60fps matches source video framerate
+      repeat: -1    // Loop infinitely
     });
 
-    // Create run animation with new frame sprites (frame_0036.png to frame_0141.png)
+    // Run animation: 106 frames (frame_0036 to frame_0141)
+    // Creates smooth running cycle animation
     const runFrames = [];
     for (let i = 36; i <= 141; i++) {
       runFrames.push({ key: `character-run-frame${i}` });
@@ -57,57 +68,38 @@ export default class GameScene extends Phaser.Scene {
     this.anims.create({
       key: 'run',
       frames: runFrames,
-      frameRate: 60, // 60 fps for smooth animation
-      repeat: -1
+      frameRate: 60, // 60fps matches source video framerate
+      repeat: -1     // Loop infinitely
     });
   }
 
   createBulletTextures() {
-    // Rapid Fire - Circle with dark outline for contrast (GREEN)
+    // Rapid Fire - Flat circle (MULBERRY)
     const rapidGraphics = this.add.graphics();
-    // Dark outline
-    rapidGraphics.fillStyle(0x000000, 0.8);
-    rapidGraphics.fillCircle(8, 8, 7);
-    // Bright green outer glow
-    rapidGraphics.fillStyle(0x00FF00, 0.5);
+    // Flat Mulberry circle
+    rapidGraphics.fillStyle(0xd84797, 1);
     rapidGraphics.fillCircle(8, 8, 6);
-    // Bright center with green tint
-    rapidGraphics.fillStyle(0xCCFFCC, 1);
-    rapidGraphics.fillCircle(8, 8, 4);
     rapidGraphics.generateTexture('bullet', 16, 16);
     rapidGraphics.destroy();
 
-    // Sniper - Diamond shape with dark outline
+    // Sniper - Flat diamond shape (MULBERRY)
     const sniperGraphics = this.add.graphics();
-    // Dark outline circle
-    sniperGraphics.fillStyle(0x000000, 0.8);
-    sniperGraphics.fillCircle(8, 8, 8);
-    // Bright glow
-    sniperGraphics.fillStyle(0x00FFFF, 0.5);
-    sniperGraphics.fillCircle(8, 8, 7);
-    // Bright diamond
-    sniperGraphics.fillStyle(0x00FFFF, 1);
+    // Flat Mulberry diamond
+    sniperGraphics.fillStyle(0xd84797, 1);
     sniperGraphics.fillTriangle(8, 2, 2, 8, 8, 14);
     sniperGraphics.fillTriangle(8, 2, 14, 8, 8, 14);
     sniperGraphics.generateTexture('bullet-sniper', 16, 16);
     sniperGraphics.destroy();
 
-    // Shotgun - Hexagon with dark outline (BRIGHTER ORANGE)
+    // Shotgun - Flat hexagon (MULBERRY)
     const shotgunGraphics = this.add.graphics();
-    // Dark outline
-    shotgunGraphics.fillStyle(0x000000, 0.8);
-    shotgunGraphics.fillCircle(8, 8, 7);
-    // Bright glow
-    shotgunGraphics.fillStyle(0xFF6600, 0.5);
-    shotgunGraphics.fillCircle(8, 8, 6);
-
-    // Create bright hexagon path
-    shotgunGraphics.fillStyle(0xFF6600, 1);
+    // Flat Mulberry hexagon
+    shotgunGraphics.fillStyle(0xd84797, 1);
     shotgunGraphics.beginPath();
     for (let i = 0; i < 6; i++) {
       const angle = (Math.PI / 3) * i - Math.PI / 2;
-      const x = 8 + Math.cos(angle) * 4;
-      const y = 8 + Math.sin(angle) * 4;
+      const x = 8 + Math.cos(angle) * 5;
+      const y = 8 + Math.sin(angle) * 5;
       if (i === 0) {
         shotgunGraphics.moveTo(x, y);
       } else {
@@ -116,24 +108,17 @@ export default class GameScene extends Phaser.Scene {
     }
     shotgunGraphics.closePath();
     shotgunGraphics.fillPath();
-
     shotgunGraphics.generateTexture('bullet-shotgun', 16, 16);
     shotgunGraphics.destroy();
 
-    // Burst - Square with rotation and dark outline
+    // Burst - Flat rotated square (MULBERRY)
     const burstGraphics = this.add.graphics();
-    // Dark outline
-    burstGraphics.fillStyle(0x000000, 0.8);
-    burstGraphics.fillCircle(8, 8, 7);
-    // Bright glow
-    burstGraphics.fillStyle(0xFF00FF, 0.5);
-    burstGraphics.fillCircle(8, 8, 6);
-    // Bright square
-    burstGraphics.fillStyle(0xFF00FF, 1);
+    // Flat Mulberry square
+    burstGraphics.fillStyle(0xd84797, 1);
     burstGraphics.save();
     burstGraphics.translateCanvas(8, 8);
     burstGraphics.rotateCanvas(Math.PI / 4);
-    burstGraphics.fillRect(-3.5, -3.5, 7, 7);
+    burstGraphics.fillRect(-4, -4, 8, 8);
     burstGraphics.restore();
     burstGraphics.generateTexture('bullet-burst', 16, 16);
     burstGraphics.destroy();
@@ -403,10 +388,10 @@ export default class GameScene extends Phaser.Scene {
     const centerY = 0;
     const radius = Math.max(worldWidth, worldHeight);
 
-    // Outer gradient circles (move slowest for depth) - Dark grey/black shades
+    // Outer gradient circles (move slowest for depth) - Darker Champagne Pink tones
     const deepColors = [
-      { radius: 1.0, color: 0x1a1a1a, alpha: 1 },
-      { radius: 0.8, color: 0x2a2a2a, alpha: 1 }
+      { radius: 1.0, color: 0xd4c4b7, alpha: 1 }, // Darker Champagne Pink
+      { radius: 0.8, color: 0xe5d5c7, alpha: 1 }  // Mid Champagne Pink
     ];
 
     deepColors.forEach(({ radius: r, color }) => {
@@ -416,11 +401,11 @@ export default class GameScene extends Phaser.Scene {
     deepBgGraphics.setDepth(-10);
     deepBgGraphics.setScrollFactor(0.7); // Parallax effect
 
-    // PARALLAX LAYER 2: Middle background (85% speed) - Medium grey shades
+    // PARALLAX LAYER 2: Middle background (85% speed) - Champagne Pink variations
     const midBgGraphics = this.add.graphics();
     const midColors = [
-      { radius: 0.5, color: 0x3a3a3a, alpha: 1 },
-      { radius: 0.2, color: 0x4a4a4a, alpha: 1 }
+      { radius: 0.5, color: 0xf5e4d7, alpha: 1 }, // Champagne Pink
+      { radius: 0.2, color: 0xfff4ea, alpha: 1 }  // Lighter Champagne Pink
     ];
 
     midColors.forEach(({ radius: r, color }) => {
@@ -455,8 +440,8 @@ export default class GameScene extends Phaser.Scene {
   createWorldBorders(width, height) {
     const graphics = this.add.graphics();
 
-    // Light grey for borders
-    const borderColor = 0x808080; // Medium grey
+    // Pacific Cyan for borders
+    const borderColor = 0x00b4d8; // Pacific Cyan
     const borderWidth = 8;
     const cornerRadius = 50;
 
@@ -478,8 +463,8 @@ export default class GameScene extends Phaser.Scene {
     const gridSize = 100;
     const graphics = this.add.graphics();
 
-    // Primary grid - subtle grey
-    graphics.lineStyle(1, 0x555555, 0.15);
+    // Primary grid - subtle Pacific Cyan
+    graphics.lineStyle(1, 0x00b4d8, 0.15); // Pacific Cyan
 
     // Vertical lines
     for (let x = -width / 2; x <= width / 2; x += gridSize) {
@@ -491,8 +476,8 @@ export default class GameScene extends Phaser.Scene {
       graphics.lineBetween(-width / 2, y, width / 2, y);
     }
 
-    // Major grid lines (every 500px) - lighter grey
-    graphics.lineStyle(2, 0x666666, 0.3);
+    // Major grid lines (every 500px) - brighter Pacific Cyan
+    graphics.lineStyle(2, 0x33c9ed, 0.3); // Lighter Pacific Cyan
 
     for (let x = -width / 2; x <= width / 2; x += 500) {
       graphics.lineBetween(x, -height / 2, x, height / 2);
@@ -502,8 +487,8 @@ export default class GameScene extends Phaser.Scene {
       graphics.lineBetween(-width / 2, y, width / 2, y);
     }
 
-    // Center cross lines - white
-    graphics.lineStyle(3, 0x888888, 0.4);
+    // Center cross lines - Champagne Pink
+    graphics.lineStyle(3, 0xf5e4d7, 0.4); // Champagne Pink
     graphics.lineBetween(0, -height / 2, 0, height / 2);
     graphics.lineBetween(-width / 2, 0, width / 2, 0);
 
@@ -515,7 +500,7 @@ export default class GameScene extends Phaser.Scene {
     graphics.setDepth(-1);
     graphics.setScrollFactor(0.9); // Parallax - move slower than foreground
 
-    // Corner decorations - hexagons in grey tones
+    // Corner decorations - hexagons in Pacific Cyan tones
     const corners = [
       { x: -1200, y: -1200 },
       { x: 1200, y: -1200 },
@@ -524,20 +509,20 @@ export default class GameScene extends Phaser.Scene {
     ];
 
     corners.forEach(corner => {
-      // Large hexagon
-      graphics.lineStyle(3, 0x666666, 0.2);
+      // Large hexagon - Pacific Cyan
+      graphics.lineStyle(3, 0x00b4d8, 0.2);
       this.drawHexagonAt(graphics, corner.x, corner.y, 80);
 
-      // Medium hexagon
-      graphics.lineStyle(2, 0x777777, 0.15);
+      // Medium hexagon - Lighter Pacific Cyan
+      graphics.lineStyle(2, 0x33c9ed, 0.15);
       this.drawHexagonAt(graphics, corner.x, corner.y, 50);
 
-      // Small hexagon
-      graphics.lineStyle(1, 0x888888, 0.1);
+      // Small hexagon - Champagne Pink
+      graphics.lineStyle(1, 0xf5e4d7, 0.1);
       this.drawHexagonAt(graphics, corner.x, corner.y, 30);
 
-      // Corner accent lines
-      graphics.lineStyle(2, 0x666666, 0.2);
+      // Corner accent lines - Pacific Cyan
+      graphics.lineStyle(2, 0x00b4d8, 0.2);
       const lineLength = 60;
       if (corner.x < 0) {
         graphics.lineBetween(corner.x, corner.y, corner.x + lineLength, corner.y);
@@ -561,7 +546,7 @@ export default class GameScene extends Phaser.Scene {
 
     decorPositions.forEach((pos, i) => {
       const shape = i % 3;
-      graphics.lineStyle(1, 0x666666, 0.1);
+      graphics.lineStyle(1, 0x00b4d8, 0.1); // Pacific Cyan
 
       switch (shape) {
         case 0: // Circle
@@ -609,7 +594,7 @@ export default class GameScene extends Phaser.Scene {
     this.ambientParticles = [];
     const particleCount = 30;
     const shapes = ['circle', 'triangle', 'diamond', 'square'];
-    const colors = [0x666666, 0x777777, 0x888888, 0x999999, 0xaaaaaa];
+    const colors = [0x00b4d8, 0x33c9ed, 0x0077b6, 0xf5e4d7, 0x2a2b2a]; // Pacific Cyan variations, Champagne Pink, Jet
 
     for (let i = 0; i < particleCount; i++) {
       const x = Phaser.Math.Between(-1400, 1400);
@@ -730,7 +715,7 @@ export default class GameScene extends Phaser.Scene {
     // Create static group for walls
     this.walls = this.physics.add.staticGroup();
 
-    const wallColor = 0xcccccc; // Light grey/white-ish
+    const wallColor = 0x00b4d8; // Pacific Cyan
     const cornerRadius = 8;
 
     // Symmetrical wall layout - 4-way symmetry covering entire map
@@ -830,24 +815,24 @@ export default class GameScene extends Phaser.Scene {
         cornerRadius
       );
 
-      // Lighter top edge (simulated lighting from above)
-      graphics.fillStyle(0xeeeeee, 0.4);
+      // Lighter top edge (simulated lighting from above) - lighter Pacific Cyan
+      graphics.fillStyle(0x33c9ed, 0.4);
       graphics.fillRoundedRect(0, 0, config.width, 4, cornerRadius);
 
-      // Darker bottom edge (depth shadow)
-      graphics.fillStyle(0x999999, 0.5);
+      // Darker bottom edge (depth shadow) - Honolulu Blue (darker cyan)
+      graphics.fillStyle(0x0077b6, 0.5);
       graphics.fillRoundedRect(0, config.height - 4, config.width, 4, cornerRadius);
 
-      // Subtle left highlight
-      graphics.fillStyle(0xeeeeee, 0.3);
+      // Subtle left highlight - lighter Pacific Cyan
+      graphics.fillStyle(0x33c9ed, 0.3);
       graphics.fillRoundedRect(0, 0, 3, config.height, cornerRadius);
 
-      // Subtle right shadow
-      graphics.fillStyle(0x999999, 0.4);
+      // Subtle right shadow - Honolulu Blue
+      graphics.fillStyle(0x0077b6, 0.4);
       graphics.fillRoundedRect(config.width - 3, 0, 3, config.height, cornerRadius);
 
-      // Add bright border for better contrast
-      graphics.lineStyle(2, 0xFFFFFF, 0.3);
+      // Add bright border for better contrast - Champagne Pink
+      graphics.lineStyle(2, 0xf5e4d7, 0.3);
       graphics.strokeRoundedRect(
         0,
         0,
@@ -865,7 +850,7 @@ export default class GameScene extends Phaser.Scene {
         config.y + 3,
         config.width,
         config.height,
-        0x000000,
+        0x2a2b2a, // Jet
         0.3
       );
       wallShadow.setDepth(0);
@@ -937,7 +922,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Draw background with rounded corners
     const cornerRadius = 12;
-    this.minimapBg.fillStyle(0x000000, 0.8);
+    this.minimapBg.fillStyle(0x2a2b2a, 0.8); // Jet
     this.minimapBg.fillRoundedRect(minimapX, minimapY, minimapSize, minimapSize, cornerRadius);
 
     // Draw border with grey and rounded corners
@@ -1122,7 +1107,7 @@ export default class GameScene extends Phaser.Scene {
 
       // Redraw background with rounded corners
       const cornerRadius = 12;
-      this.minimapBg.fillStyle(0x000000, 0.8);
+      this.minimapBg.fillStyle(0x2a2b2a, 0.8); // Jet
       this.minimapBg.fillRoundedRect(newMinimapX, y, size, size, cornerRadius);
 
       // Redraw border with grey and rounded corners
@@ -1292,9 +1277,6 @@ export default class GameScene extends Phaser.Scene {
           line.x += pullX;
           line.y += pullY;
         });
-
-        // Pulse faster when being pulled
-        pickup.sprite.setScale(1.2 + pullStrength * 0.3);
       }
 
       // Pickup range

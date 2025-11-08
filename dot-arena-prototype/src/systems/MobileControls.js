@@ -45,7 +45,7 @@ export default class MobileControls {
       joystickX,
       joystickY,
       this.joystickRadius,
-      0x000000,
+      0x2a2b2a,
       0.3
     );
     this.joystickBase.setStrokeStyle(3, 0x00FFFF, 0.6);
@@ -109,7 +109,7 @@ export default class MobileControls {
     const alpha = this.shootButton.isPressed ? 1.0 : 0.5;
 
     // Outer ring
-    this.shootButtonGraphics.fillStyle(0x000000, 0.4);
+    this.shootButtonGraphics.fillStyle(0x2a2b2a, 0.4);
     this.shootButtonGraphics.fillCircle(
       this.shootButton.x,
       this.shootButton.y,
@@ -153,7 +153,7 @@ export default class MobileControls {
     const alpha = this.dashButton.isPressed ? 1.0 : 0.5;
 
     // Outer ring
-    this.dashButtonGraphics.fillStyle(0x000000, 0.4);
+    this.dashButtonGraphics.fillStyle(0x2a2b2a, 0.4);
     this.dashButtonGraphics.fillCircle(
       this.dashButton.x,
       this.dashButton.y,

@@ -169,22 +169,43 @@ export class WeaponPickup {
     // Use detailed weapon graphics instead of simple lines
     const config = new Weapon(this.scene, this.weaponType).config;
 
-    // Generate detailed weapon texture using WeaponGraphics
-    const textureKey = WeaponGraphics.generateTexture(this.scene, this.weaponType, 1);
+    // Check if we have a custom sprite for this weapon type
+    const customSpriteMap = {
+      'shotgun': 'pickup-shotgun',
+      'burst': 'pickup-burst',
+      'sniper': 'pickup-sniper'
+    };
+
+    let textureKey;
+    this.useCustomSprite = false;
+
+    if (customSpriteMap[this.weaponType] && this.scene.textures.exists(customSpriteMap[this.weaponType])) {
+      textureKey = customSpriteMap[this.weaponType];
+      this.useCustomSprite = true;
+    } else {
+      // Generate detailed weapon texture using WeaponGraphics for weapons without custom sprites
+      textureKey = WeaponGraphics.generateTexture(this.scene, this.weaponType, 1);
+    }
 
     // Create drop shadow for weapon pickup (darker for more contrast)
-    this.shadow = this.scene.add.ellipse(x, y + 10, 50, 18, 0x000000, 0.5);
+    this.shadow = this.scene.add.ellipse(x, y + 10, 50, 18, 0x2a2b2a, 0.5);
     this.shadow.setDepth(6);
     this.shadow.setBlendMode(Phaser.BlendModes.MULTIPLY);
 
     // Create dark backing circle for contrast against background
-    this.backingCircle = this.scene.add.circle(x, y, 35, 0x000000, 0.7);
+    this.backingCircle = this.scene.add.circle(x, y, 35, 0x2a2b2a, 0.7);
     this.backingCircle.setDepth(7);
 
     // Create sprite with detailed graphics
     this.sprite = this.scene.physics.add.sprite(x, y, textureKey);
     this.sprite.setDepth(8);
-    this.sprite.setScale(0.6); // Scale down since new graphics are more detailed and larger
+
+    // Scale appropriately based on sprite type
+    if (this.useCustomSprite) {
+      this.sprite.setScale(0.15); // Custom sprites are larger resolution images
+    } else {
+      this.sprite.setScale(0.6); // Generated graphics are smaller
+    }
 
     // Add enhanced holographic glow effect (brighter)
     this.glowCircle = this.scene.add.circle(x, y, 32, config.bulletColor, 0.4);
@@ -240,10 +261,12 @@ export class WeaponPickup {
     });
 
     // Rotating animation for sprite
+    // Custom sprites spin faster for more visual appeal
+    const spinDuration = this.useCustomSprite ? 2000 : 3000;
     this.scene.tweens.add({
       targets: this.sprite,
       angle: 360,
-      duration: 3000,
+      duration: spinDuration,
       repeat: -1,
       ease: 'Linear'
     });
@@ -356,9 +379,21 @@ export class WeaponPickup {
     this.hexFrame.setVisible(true);
     this.scanLines.forEach(line => line.setVisible(true));
 
-    // Enhanced spawn effect with all elements (including backing circle)
+    // Get the correct target scale for the sprite
+    const targetSpriteScale = this.useCustomSprite ? 0.15 : 0.6;
+
+    // Enhanced spawn effect - sprite scales to its proper size
     this.scene.tweens.add({
-      targets: [this.sprite, this.shadow, this.backingCircle, this.glowCircle, this.outerRing, this.innerRing, this.hexFrame, ...this.scanLines],
+      targets: this.sprite,
+      scale: { from: 0, to: targetSpriteScale },
+      alpha: { from: 0, to: 1 },
+      duration: 300,
+      ease: 'Back.easeOut'
+    });
+
+    // Other elements scale to 1
+    this.scene.tweens.add({
+      targets: [this.shadow, this.backingCircle, this.glowCircle, this.outerRing, this.innerRing, this.hexFrame, ...this.scanLines],
       scale: { from: 0, to: 1 },
       alpha: { from: 0, to: 1 },
       duration: 300,

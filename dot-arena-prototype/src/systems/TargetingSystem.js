@@ -201,26 +201,26 @@ export default class TargetingSystem {
         range: 500,
         pattern: '360°',
         priority: 'closest',
-        color: 0x00FF00  // Bright green for rapid fire
+        color: 0xd84797  // Mulberry
       },
       'sniper': {
-        range: 900,
+        range: 650,
         pattern: '360°',
         priority: 'furthest',
-        color: 0x00FFFF  // Cyan for sniper
+        color: 0xd84797  // Mulberry
       },
       'shotgun': {
         range: 350,
         pattern: '360°',
         priority: 'multi-closest',
         maxTargets: 5,
-        color: 0xFF6600  // Orange for shotgun
+        color: 0xd84797  // Mulberry
       },
       'burst': {
         range: 600,
         pattern: '360°',
         priority: 'clusters',
-        color: 0xFF00FF  // Magenta for burst
+        color: 0xd84797  // Mulberry
       }
     };
 

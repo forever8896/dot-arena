@@ -60,7 +60,7 @@ export default class MenuScene extends Phaser.Scene {
     const howToY = contentStart;
 
     // Box first
-    const howToBox = this.add.rectangle(rightX, howToY + 60, 450, 140, 0x000000, 0.3);
+    const howToBox = this.add.rectangle(rightX, howToY + 60, 450, 140, 0x2a2b2a, 0.3);
     howToBox.setStrokeStyle(2, 0xFFFFFF, 0.4);
 
     // Header ABOVE the box
@@ -95,7 +95,7 @@ export default class MenuScene extends Phaser.Scene {
     const tokenY = howToY + 190;
 
     // Box first
-    const tokenBox = this.add.rectangle(rightX, tokenY + 65, 450, 150, 0x000000, 0.3);
+    const tokenBox = this.add.rectangle(rightX, tokenY + 65, 450, 150, 0x2a2b2a, 0.3);
     tokenBox.setStrokeStyle(2, 0xFFFFFF, 0.4);
 
     // Header ABOVE the box

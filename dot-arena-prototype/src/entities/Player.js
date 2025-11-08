@@ -16,7 +16,7 @@ export default class Player {
     this.isMobile = this.scene.sys.game.device.input.touch;
 
     // Create shadow ellipse below character
-    this.shadow = scene.add.ellipse(x, y, 60, 20, 0x000000, 0.3);
+    this.shadow = scene.add.ellipse(x, y, 60, 20, 0x2a2b2a, 0.3); // Jet
     this.shadow.setDepth(9); // Just below player
 
     // Create sprite using the first frame of the idle animation
@@ -239,6 +239,9 @@ export default class Player {
     this.isDashing = true;
     this.lastDash = now;
 
+    // Make player invincible during dash
+    this.isInvulnerable = true;
+
     // Apply dash velocity
     this.sprite.setVelocity(
       direction.x * this.dashSpeed,
@@ -254,6 +257,13 @@ export default class Player {
     // End dash after duration
     this.scene.time.delayedCall(this.dashDuration, () => {
       this.isDashing = false;
+      // Remove invincibility when dash ends (unless already invulnerable from taking damage)
+      // Check if we're in a damage-based invulnerability window
+      if (this.invulnerabilityTimer) {
+        // Don't remove invulnerability yet, damage-based i-frames are still active
+      } else {
+        this.isInvulnerable = false;
+      }
     });
   }
 
@@ -436,9 +446,15 @@ export default class Player {
       this.isInvulnerable = true;
       console.log('Setting invulnerable = true');
 
+      // Clear any existing invulnerability timer
+      if (this.invulnerabilityTimer) {
+        this.invulnerabilityTimer.remove();
+      }
+
       // End invulnerability after duration
-      this.scene.time.delayedCall(this.invulnerabilityDuration, () => {
+      this.invulnerabilityTimer = this.scene.time.delayedCall(this.invulnerabilityDuration, () => {
         this.isInvulnerable = false;
+        this.invulnerabilityTimer = null;
         console.log('Setting invulnerable = false');
       });
     }
@@ -475,7 +491,7 @@ export default class Player {
     const fireWidth = (firePercent / 100) * barWidth;
 
     // Background bar for fire
-    this.cooldownIndicators.fillStyle(0x000000, 0.5);
+    this.cooldownIndicators.fillStyle(0x2a2b2a, 0.5); // Jet
     this.cooldownIndicators.fillRect(
       this.sprite.x - barWidth / 2,
       this.sprite.y + yOffset,
@@ -511,7 +527,7 @@ export default class Player {
     const dashWidth = (dashPercent / 100) * barWidth;
 
     // Background bar for dash
-    this.cooldownIndicators.fillStyle(0x000000, 0.5);
+    this.cooldownIndicators.fillStyle(0x2a2b2a, 0.5); // Jet
     this.cooldownIndicators.fillRect(
       this.sprite.x - barWidth / 2,
       this.sprite.y + yOffset + barHeight + spacing,

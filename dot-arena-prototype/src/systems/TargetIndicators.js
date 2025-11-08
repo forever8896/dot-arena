@@ -38,7 +38,7 @@ export default class TargetIndicators {
    */
   drawRangeCircle(player, config) {
     // Draw dark outline first for contrast
-    this.graphics.lineStyle(4, 0x000000, 0.4);
+    this.graphics.lineStyle(4, 0x2a2b2a, 0.8);
     this.graphics.strokeCircle(
       player.sprite.x,
       player.sprite.y,
@@ -46,7 +46,7 @@ export default class TargetIndicators {
     );
 
     // Draw bright colored ring on top
-    this.graphics.lineStyle(2, config.color, 0.6);
+    this.graphics.lineStyle(2, config.color, 1.0);
     this.graphics.strokeCircle(
       player.sprite.x,
       player.sprite.y,
@@ -61,7 +61,7 @@ export default class TargetIndicators {
     if (!target || !target.sprite) return;
 
     // Draw dark outline first for contrast
-    this.graphics.lineStyle(4, 0x000000, 0.5);
+    this.graphics.lineStyle(4, 0x2a2b2a, 0.5);
     this.graphics.lineBetween(
       player.sprite.x,
       player.sprite.y,

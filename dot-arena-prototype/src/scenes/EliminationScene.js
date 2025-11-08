@@ -35,7 +35,7 @@ export default class EliminationScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    const statsBox = this.add.rectangle(width / 2, statsY + 75, 480, 140, 0x000000, 0.3);
+    const statsBox = this.add.rectangle(width / 2, statsY + 75, 480, 140, 0x2a2b2a, 0.3);
     statsBox.setStrokeStyle(2, 0xFFFFFF, 0.4);
 
     this.add.text(width / 2, statsY + 45, `Kills: ${this.playerStats.kills}  •  Placement: ${this.playerStats.placement}/${this.playerStats.totalPlayers}`, {
@@ -67,7 +67,7 @@ export default class EliminationScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    const impactBox = this.add.rectangle(width / 2, impactY + 95, 580, 180, 0x000000, 0.3);
+    const impactBox = this.add.rectangle(width / 2, impactY + 95, 580, 180, 0x2a2b2a, 0.3);
     impactBox.setStrokeStyle(2, 0xFFFFFF, 0.4);
 
     this.add.text(width / 2, impactY + 40, 'Every kill distributes 1 DOT:', {
@@ -111,7 +111,7 @@ export default class EliminationScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // Main Menu button
-    const menuButton = this.add.rectangle(width / 2 + 180, buttonY, 220, 55, 0x000000, 0.5);
+    const menuButton = this.add.rectangle(width / 2 + 180, buttonY, 220, 55, 0x2a2b2a, 0.5);
     menuButton.setStrokeStyle(2, 0xFFFFFF, 1);
     menuButton.setInteractive({ useHandCursor: true });
 
@@ -142,19 +142,19 @@ export default class EliminationScene extends Phaser.Scene {
 
     // Button hover effects - Menu
     menuButton.on('pointerover', () => {
-      menuButton.setFillStyle(0x000000, 0.7);
+      menuButton.setFillStyle(0x2a2b2a, 0.7);
     });
 
     menuButton.on('pointerout', () => {
-      menuButton.setFillStyle(0x000000, 0.5);
+      menuButton.setFillStyle(0x2a2b2a, 0.5);
     });
 
     menuButton.on('pointerdown', () => {
-      menuButton.setFillStyle(0x000000, 0.9);
+      menuButton.setFillStyle(0x2a2b2a, 0.9);
     });
 
     menuButton.on('pointerup', () => {
-      menuButton.setFillStyle(0x000000, 0.5);
+      menuButton.setFillStyle(0x2a2b2a, 0.5);
       this.scene.start('MenuScene');
     });
 

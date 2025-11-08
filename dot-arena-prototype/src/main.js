@@ -31,7 +31,7 @@ const config = {
     }
   },
   scene: [MenuScene, GameScene, EliminationScene],
-  backgroundColor: '#E6007A',
+  backgroundColor: '#f5e4d7', // Champagne Pink - ground color
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,

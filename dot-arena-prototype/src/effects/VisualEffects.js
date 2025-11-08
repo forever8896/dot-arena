@@ -25,47 +25,35 @@ export class BulletTrailEffect {
 
   getTrailColor() {
     const colors = {
-      'rapid': 0x00FF00,  // Bright green
-      'sniper': 0x00FFFF,  // Cyan
-      'shotgun': 0xFF6600, // Bright orange
-      'burst': 0xFF00FF    // Magenta
+      'rapid': 0xd84797,   // Mulberry
+      'sniper': 0xd84797,  // Mulberry
+      'shotgun': 0xd84797, // Mulberry
+      'burst': 0xd84797    // Mulberry
     };
-    return colors[this.weaponType] || 0x00FF00;
+    return colors[this.weaponType] || 0xd84797;
   }
 
   update() {
     if (!this.bullet || !this.bullet.active) return;
 
-    // Create trail particle
+    // Create solid geometric trail particle (same size as bullet)
     const trail = this.scene.add.circle(
       this.bullet.x,
       this.bullet.y,
-      this.bullet.displayWidth / 2,
+      this.bullet.displayWidth * 0.8,
       this.trailColor,
-      0.6
+      1.0  // Fully opaque
     );
     trail.setDepth(4);
 
-    // Add subtle glow
-    const glow = this.scene.add.circle(
-      this.bullet.x,
-      this.bullet.y,
-      this.bullet.displayWidth * 1.5,
-      this.trailColor,
-      0.2
-    );
-    glow.setDepth(3);
-
-    // Fade out trail
+    // Scale down and disappear abruptly (no fade)
     this.scene.tweens.add({
-      targets: [trail, glow],
-      alpha: 0,
-      scale: 0.3,
-      duration: 200,
+      targets: trail,
+      scale: 0,
+      duration: 150,
       ease: 'Power2',
       onComplete: () => {
         trail.destroy();
-        glow.destroy();
       }
     });
 
@@ -156,10 +144,10 @@ export class ImpactEffect {
 
   static getConfig(weaponType, isKill) {
     const base = {
-      'rapid': { color: 0x00FF00, flashRadius: 30, ringRadius: 40 },  // Bright green
-      'sniper': { color: 0x00FFFF, flashRadius: 50, ringRadius: 70 },  // Cyan
-      'shotgun': { color: 0xFF6600, flashRadius: 40, ringRadius: 50 }, // Bright orange
-      'burst': { color: 0xFF00FF, flashRadius: 35, ringRadius: 45 }    // Magenta
+      'rapid': { color: 0xd84797, flashRadius: 30, ringRadius: 40 },   // Mulberry
+      'sniper': { color: 0xd84797, flashRadius: 50, ringRadius: 70 },  // Mulberry
+      'shotgun': { color: 0xd84797, flashRadius: 40, ringRadius: 50 }, // Mulberry
+      'burst': { color: 0xd84797, flashRadius: 35, ringRadius: 45 }    // Mulberry
     };
 
     const config = base[weaponType] || base['rapid'];
@@ -270,12 +258,12 @@ export class ImpactEffect {
 export class WeaponSwitchEffect {
   static create(scene, player, newWeapon) {
     const colors = {
-      'rapid': 0x00FF00,  // Bright green
-      'sniper': 0x00FFFF,  // Cyan
-      'shotgun': 0xFF6600, // Bright orange
-      'burst': 0xFF00FF    // Magenta
+      'rapid': 0xd84797,   // Mulberry
+      'sniper': 0xd84797,  // Mulberry
+      'shotgun': 0xd84797, // Mulberry
+      'burst': 0xd84797    // Mulberry
     };
-    const color = colors[newWeapon] || 0x00FF00;
+    const color = colors[newWeapon] || 0xd84797;
 
     // Expanding ring around player using graphics
     const ring = scene.add.graphics();
@@ -430,7 +418,7 @@ export class ScreenEffects {
       const alpha = progress * 0.5; // Max 0.5 alpha at edges
       const inset = (1 - progress) * Math.min(width, height) * 0.3;
 
-      this.vignette.fillStyle(0x000000, alpha / steps);
+      this.vignette.fillStyle(0x2a2b2a, alpha / steps);
       this.vignette.fillRect(
         inset,
         inset,
