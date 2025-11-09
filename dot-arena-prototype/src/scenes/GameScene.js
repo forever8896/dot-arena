@@ -39,6 +39,13 @@ export default class GameScene extends Phaser.Scene {
     this.load.image('pickup-burst', '/src/assets/assaultrifflepickup.png');
     this.load.image('pickup-sniper', '/src/assets/sniperpickup.png');
 
+    // Load sound effects
+    this.load.audio('shoot-sound', '/src/assets/shoot-sound.mp3');
+    this.load.audio('reload-sound', '/src/assets/reload-sound.mp3');
+    this.load.audio('pickup-sound', '/src/assets/pickup-sound.mp3');
+    this.load.audio('dodge-sound', '/src/assets/dodge-sound.mp3');
+    this.load.audio('death-sound', '/src/assets/death.wav');
+
     // Create enhanced bullet graphics with geometric designs
     this.createBulletTextures();
   }
@@ -296,6 +303,8 @@ export default class GameScene extends Phaser.Scene {
               // Track kills
               if (willKill) {
                 this.kills++;
+                // Play death sound on kill
+                this.sound.play('death-sound', { volume: 0.4 });
               }
             }
           }
@@ -382,38 +391,12 @@ export default class GameScene extends Phaser.Scene {
     const worldWidth = 3000;
     const worldHeight = 3000;
 
-    // PARALLAX LAYER 1: Deepest background - slowest scroll (70% speed)
-    const deepBgGraphics = this.add.graphics();
-    const centerX = 0;
-    const centerY = 0;
-    const radius = Math.max(worldWidth, worldHeight);
+    // Generate all background textures once for performance
+    this.generateBackgroundTextures(worldWidth, worldHeight);
 
-    // Outer gradient circles (move slowest for depth) - Darker Champagne Pink tones
-    const deepColors = [
-      { radius: 1.0, color: 0xd4c4b7, alpha: 1 }, // Darker Champagne Pink
-      { radius: 0.8, color: 0xe5d5c7, alpha: 1 }  // Mid Champagne Pink
-    ];
-
-    deepColors.forEach(({ radius: r, color }) => {
-      deepBgGraphics.fillStyle(color, 1);
-      deepBgGraphics.fillCircle(centerX, centerY, radius * r);
-    });
-    deepBgGraphics.setDepth(-10);
-    deepBgGraphics.setScrollFactor(0.7); // Parallax effect
-
-    // PARALLAX LAYER 2: Middle background (85% speed) - Champagne Pink variations
-    const midBgGraphics = this.add.graphics();
-    const midColors = [
-      { radius: 0.5, color: 0xf5e4d7, alpha: 1 }, // Champagne Pink
-      { radius: 0.2, color: 0xfff4ea, alpha: 1 }  // Lighter Champagne Pink
-    ];
-
-    midColors.forEach(({ radius: r, color }) => {
-      midBgGraphics.fillStyle(color, 1);
-      midBgGraphics.fillCircle(centerX, centerY, radius * r);
-    });
-    midBgGraphics.setDepth(-5);
-    midBgGraphics.setScrollFactor(0.85); // Parallax effect
+    // Pacific Cyan background with subtle surface texture variation
+    const bg = this.add.image(0, 0, 'deep-bg-texture');
+    bg.setDepth(-10);
 
     // Set world bounds - player can move through entire map
     this.physics.world.setBounds(
@@ -427,7 +410,7 @@ export default class GameScene extends Phaser.Scene {
     // Enhanced grid pattern with geometric details (normal scroll)
     this.createGrid(worldWidth, worldHeight);
 
-    // PARALLAX LAYER 3: Decorative patterns (90% speed - between background and foreground)
+    // PARALLAX LAYER 5: Decorative patterns (90% speed - between background and foreground)
     this.createGeometricPatterns(worldWidth, worldHeight);
 
     // Add zone markers (normal scroll)
@@ -436,6 +419,88 @@ export default class GameScene extends Phaser.Scene {
     // Add ambient floating particles for atmosphere
     this.createAmbientParticles();
   }
+
+  generateBackgroundTextures(worldWidth, worldHeight) {
+    // Generate Pacific Cyan background with visible surface texture
+    const baseGraphics = this.add.graphics();
+
+    // Create visible brightness variations across the surface using noise
+    const pixelSize = 8; // Larger blocks for more visible texture
+
+    for (let x = 0; x < worldWidth; x += pixelSize) {
+      for (let y = 0; y < worldHeight; y += pixelSize) {
+        // Get noise value for this position (range roughly -0.5 to 0.5)
+        const noiseValue = this.fbm(x * 0.005, y * 0.005, 3);
+
+        // Convert noise to brightness multiplier (0.7 to 1.3 range for visible variation)
+        const brightnessFactor = 1.0 + (noiseValue * 0.6);
+
+        // Base Pacific Cyan: R=0x00, G=0xb4, B=0xd8
+        let r = Math.floor(0x00 * brightnessFactor);
+        let g = Math.floor(0xb4 * brightnessFactor);
+        let b = Math.floor(0xd8 * brightnessFactor);
+
+        // Clamp to valid color range
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+
+        const texturedColor = (r << 16) | (g << 8) | b;
+
+        baseGraphics.fillStyle(texturedColor, 1);
+        baseGraphics.fillRect(x, y, pixelSize, pixelSize);
+      }
+    }
+
+    baseGraphics.generateTexture('deep-bg-texture', worldWidth, worldHeight);
+    baseGraphics.destroy();
+  }
+
+  // Simple Perlin-like noise function using value noise
+  simpleNoise(x, y, seed = 0) {
+    const X = Math.floor(x) & 255;
+    const Y = Math.floor(y) & 255;
+
+    x -= Math.floor(x);
+    y -= Math.floor(y);
+
+    const u = x * x * (3 - 2 * x);
+    const v = y * y * (3 - 2 * y);
+
+    // Simple hash function for pseudo-random values
+    const hash = (i, j) => {
+      let h = seed + i * 374761393 + j * 668265263;
+      h = (h ^ (h >> 13)) * 1274126177;
+      return (h ^ (h >> 16)) / 2147483648.0;
+    };
+
+    const a = hash(X, Y);
+    const b = hash(X + 1, Y);
+    const c = hash(X, Y + 1);
+    const d = hash(X + 1, Y + 1);
+
+    const k1 = a + u * (b - a);
+    const k2 = c + u * (d - c);
+
+    return k1 + v * (k2 - k1);
+  }
+
+  // Fractional Brownian Motion - layered noise for organic texture
+  fbm(x, y, octaves = 4) {
+    let value = 0;
+    let amplitude = 0.5;
+    let frequency = 1;
+
+    for (let i = 0; i < octaves; i++) {
+      value += amplitude * this.simpleNoise(x * frequency, y * frequency, i);
+      amplitude *= 0.5;
+      frequency *= 2;
+    }
+
+    return value;
+  }
+
+
 
   createWorldBorders(width, height) {
     const graphics = this.add.graphics();
@@ -463,21 +528,23 @@ export default class GameScene extends Phaser.Scene {
     const gridSize = 100;
     const graphics = this.add.graphics();
 
-    // Primary grid - subtle Pacific Cyan
-    graphics.lineStyle(1, 0x00b4d8, 0.15); // Pacific Cyan
+    // Primary grid - subtle Pacific Cyan with slight imperfections
+    graphics.lineStyle(1, 0x00b4d8, 0.15);
 
     // Vertical lines
     for (let x = -width / 2; x <= width / 2; x += gridSize) {
-      graphics.lineBetween(x, -height / 2, x, height / 2);
+      const offsetX = (Math.random() - 0.5) * 1.5; // Subtle offset
+      graphics.lineBetween(x + offsetX, -height / 2, x + offsetX, height / 2);
     }
 
     // Horizontal lines
     for (let y = -height / 2; y <= height / 2; y += gridSize) {
-      graphics.lineBetween(-width / 2, y, width / 2, y);
+      const offsetY = (Math.random() - 0.5) * 1.5; // Subtle offset
+      graphics.lineBetween(-width / 2, y + offsetY, width / 2, y + offsetY);
     }
 
     // Major grid lines (every 500px) - brighter Pacific Cyan
-    graphics.lineStyle(2, 0x33c9ed, 0.3); // Lighter Pacific Cyan
+    graphics.lineStyle(2, 0x33c9ed, 0.3);
 
     for (let x = -width / 2; x <= width / 2; x += 500) {
       graphics.lineBetween(x, -height / 2, x, height / 2);
@@ -487,10 +554,22 @@ export default class GameScene extends Phaser.Scene {
       graphics.lineBetween(-width / 2, y, width / 2, y);
     }
 
-    // Center cross lines - Champagne Pink
-    graphics.lineStyle(3, 0xf5e4d7, 0.4); // Champagne Pink
+    // Center cross lines - Warm champagne pink
+    graphics.lineStyle(3, 0xf0d5c0, 0.4); // Warm sepia-tinted champagne
     graphics.lineBetween(0, -height / 2, 0, height / 2);
     graphics.lineBetween(-width / 2, 0, width / 2, 0);
+
+    // Add random grid breaks/gaps for organic feel
+    const gapCount = 30;
+    for (let i = 0; i < gapCount; i++) {
+      const x = Phaser.Math.Between(-width / 2, width / 2);
+      const y = Phaser.Math.Between(-height / 2, height / 2);
+      const gapSize = Math.random() * 12 + 4;
+
+      // Cover small section to create "gap" in grid - use warm background color
+      graphics.fillStyle(0xfff8ed, 0.9);
+      graphics.fillCircle(x, y, gapSize);
+    }
 
     graphics.setDepth(-1);
   }
@@ -1283,6 +1362,9 @@ export default class GameScene extends Phaser.Scene {
       if (distance < 40) {
         const newWeaponType = pickup.pickup();
         if (newWeaponType) {
+          // Play pickup sound
+          this.sound.play('pickup-sound', { volume: 0.5 });
+
           // Drop current weapon at player's position
           const droppedType = this.player.switchWeapon(newWeaponType);
 

@@ -37,6 +37,7 @@ export default class Player {
     // Weapon system
     this.currentWeapon = new Weapon(scene, 'rapid'); // Start with rapid fire
     this.lastFired = 0;
+    this.wasReadyToFire = true; // Track if weapon was ready last frame
 
     // Dash properties
     this.dashDistance = 150;
@@ -121,6 +122,9 @@ export default class Player {
 
     // Handle auto-aim targeting
     this.handleAutoAim();
+
+    // Check for reload sound (when weapon becomes ready after cooldown)
+    this.checkReloadSound();
 
     // Update cooldown indicators
     this.updateCooldownIndicators();
@@ -252,6 +256,7 @@ export default class Player {
     this.createDashTrail();
 
     // Play dash sound
+    this.scene.sound.play('dodge-sound', { volume: 0.4 });
     console.log('💨 DASH!');
 
     // End dash after duration
@@ -304,6 +309,18 @@ export default class Player {
     return Math.min(100, (elapsed / this.dashCooldown) * 100);
   }
 
+  checkReloadSound() {
+    const now = this.scene.time.now;
+    const isReadyToFire = now - this.lastFired >= this.currentWeapon.config.fireRate;
+
+    // Play reload sound when weapon transitions from not ready to ready
+    if (!this.wasReadyToFire && isReadyToFire) {
+      this.scene.sound.play('reload-sound', { volume: 0.3 });
+    }
+
+    this.wasReadyToFire = isReadyToFire;
+  }
+
   handleAutoAim() {
     // Get enemies from scene
     const enemies = this.scene.enemies || [];
@@ -350,6 +367,7 @@ export default class Player {
     }
 
     this.lastFired = now;
+    this.wasReadyToFire = false; // Mark weapon as not ready after firing
 
     // Use weapon to shoot with aim angle instead of sprite rotation
     this.currentWeapon.shoot(
@@ -372,6 +390,7 @@ export default class Player {
     this.createMuzzleFlash();
 
     // Audio feedback
+    this.scene.sound.play('shoot-sound', { volume: 0.3 });
     console.log(`💥 ${this.currentWeapon.getName()} fired!`);
   }
 
@@ -436,6 +455,9 @@ export default class Player {
 
     // Screen shake on damage
     this.scene.cameras.main.shake(200, 0.005);
+
+    // Play dodge/damage sound
+    this.scene.sound.play('dodge-sound', { volume: 0.5 });
 
     console.log(`💔 Took ${amount} damage! HP: ${this.hp}/${this.maxHp}`);
 
@@ -560,6 +582,9 @@ export default class Player {
 
   die() {
     console.log('☠️ Player died!');
+
+    // Play death sound
+    this.scene.sound.play('death-sound', { volume: 0.6 });
 
     // Hide cooldown indicators and targeting visuals
     this.cooldownIndicators.clear();
