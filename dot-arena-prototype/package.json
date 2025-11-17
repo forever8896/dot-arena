@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dedot": "^0.18.5",
+    "dedot": "0.18.5",
     "express": "^5.1.0",
     "msgpack-lite": "^0.1.26",
     "phaser": "^3.80.1",
@@ -19,6 +19,7 @@
     "typink": "^0.5.2"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.17",
     "autoprefixer": "^10.4.22",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.17",

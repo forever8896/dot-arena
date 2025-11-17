@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import GameState from './GameState.js';
+import { initBlockchain, hasPlayerPaid, recordKillOnChain, getPaidPlayers } from './blockchain.js';
 
 const app = express();
 app.use(cors());
@@ -27,6 +28,10 @@ const gameState = new GameState({
 // Player socket mapping
 const playerSockets = new Map(); // playerId -> socket
 const socketPlayers = new Map(); // socketId -> playerId
+
+// Wallet address mapping
+const playerWallets = new Map(); // playerId -> walletAddress
+const walletPlayers = new Map(); // walletAddress -> playerId
 
 // Input buffer (process inputs in game loop)
 const inputBuffer = new Map(); // playerId -> input queue
