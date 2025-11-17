@@ -44,32 +44,63 @@ io.on('connection', (socket) => {
   const playerId = socket.id;
   console.log(`🎮 Player connected: ${playerId}`);
 
-  // Random spawn position
-  const spawnX = Math.random() * 2800 - 1400;
-  const spawnY = Math.random() * 2800 - 1400;
+  // Wait for wallet authentication before allowing spawn
+  let walletAddress = null;
+  let authenticated = false;
 
-  // Add player to game state
-  const player = gameState.addPlayer(playerId, spawnX, spawnY);
+  // Handle wallet authentication
+  socket.on('authenticate', (data) => {
+    const { address } = data;
 
-  // Store socket mapping
-  playerSockets.set(playerId, socket);
-  socketPlayers.set(socket.id, playerId);
-  inputBuffer.set(playerId, []);
+    console.log(`🔐 Authentication attempt from ${playerId}`);
+    console.log(`   Wallet: ${address}`);
 
-  // Send initial state to new player
-  socket.emit('init', {
-    playerId: playerId,
-    player: player,
-    gameState: gameState.getState(),
-    weaponPickups: gameState.weaponPickups
+    // Verify player paid entry fee
+    if (!hasPlayerPaid(address)) {
+      console.warn(`❌ Player ${address} has not paid entry fee`);
+      socket.emit('authFailed', {
+        reason: 'Entry fee not paid',
+        message: 'Please pay 1 DOT entry fee first'
+      });
+      return;
+    }
+
+    // Authentication successful
+    walletAddress = address;
+    authenticated = true;
+    playerWallets.set(playerId, address);
+    walletPlayers.set(address, playerId);
+
+    console.log(`✅ Player ${playerId} authenticated with wallet ${address}`);
+
+    // Now spawn the player
+    const spawnX = Math.random() * 2800 - 1400;
+    const spawnY = Math.random() * 2800 - 1400;
+
+    // Add player to game state
+    const player = gameState.addPlayer(playerId, spawnX, spawnY);
+
+    // Store socket mapping
+    playerSockets.set(playerId, socket);
+    socketPlayers.set(socket.id, playerId);
+    inputBuffer.set(playerId, []);
+
+    // Send initial state to new player
+    socket.emit('init', {
+      playerId: playerId,
+      player: player,
+      gameState: gameState.getState(),
+      weaponPickups: gameState.weaponPickups,
+      walletAddress: address
+    });
+
+    // Broadcast new player to others
+    socket.broadcast.emit('playerJoined', player);
+
+    console.log(`✅ Player ${playerId} spawned at (${Math.round(spawnX)}, ${Math.round(spawnY)})`);
   });
 
-  // Broadcast new player to others
-  socket.broadcast.emit('playerJoined', player);
-
-  console.log(`✅ Player ${playerId} spawned at (${Math.round(spawnX)}, ${Math.round(spawnY)})`);
-
-  // Handle player input
+  // Handle player input (only if authenticated)
   socket.on('input', (inputData) => {
     if (!inputBuffer.has(playerId)) return;
 
@@ -116,6 +147,11 @@ io.on('connection', (socket) => {
     gameState.removePlayer(playerId);
 
     // Clean up mappings
+    const wallet = playerWallets.get(playerId);
+    if (wallet) {
+      walletPlayers.delete(wallet);
+      playerWallets.delete(playerId);
+    }
     playerSockets.delete(playerId);
     socketPlayers.delete(socket.id);
     inputBuffer.delete(playerId);
@@ -193,7 +229,7 @@ function handlePlayerHit(playerId, damage) {
   console.log(`💥 ${playerId} hit for ${damage} damage (HP: ${player.hp})`);
 }
 
-function handlePlayerKill(victimId, killerId) {
+async function handlePlayerKill(victimId, killerId) {
   const victim = gameState.players.get(victimId);
   const killer = gameState.players.get(killerId);
 
@@ -208,8 +244,45 @@ function handlePlayerKill(victimId, killerId) {
     killerKills: killer.kills
   });
 
-  // Award DOT (for now just log, blockchain integration later)
-  console.log(`💰 ${killerId} earned 0.5 DOT (pending blockchain integration)`);
+  // Record kill on blockchain and award DOT
+  const killerWallet = playerWallets.get(killerId);
+  const victimWallet = playerWallets.get(victimId);
+
+  if (killerWallet && victimWallet) {
+    console.log(`💰 Recording kill on blockchain...`);
+    console.log(`   Killer wallet: ${killerWallet}`);
+    console.log(`   Victim wallet: ${victimWallet}`);
+
+    try {
+      const result = await recordKillOnChain(killerWallet, victimWallet);
+
+      if (result.success) {
+        console.log(`✅ Kill recorded! ${killerWallet} earned 0.9 DOT`);
+        console.log(`   Transaction: ${result.txHash}`);
+
+        // Notify killer of DOT reward
+        const killerSocket = playerSockets.get(killerId);
+        if (killerSocket) {
+          killerSocket.emit('dotReward', {
+            amount: '0.9 DOT',
+            txHash: result.txHash,
+            totalKills: killer.kills
+          });
+        }
+      } else {
+        console.error(`❌ Failed to record kill: ${result.error}`);
+        if (result.offline) {
+          console.warn(`⚠️  Running in OFFLINE mode - no DOT awarded`);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Blockchain error:`, error);
+    }
+  } else {
+    console.warn(`⚠️  Cannot record kill - wallet addresses not found`);
+    console.warn(`   Killer ${killerId}: ${killerWallet || 'NO WALLET'}`);
+    console.warn(`   Victim ${victimId}: ${victimWallet || 'NO WALLET'}`);
+  }
 
   // Respawn victim after delay
   setTimeout(() => {
@@ -260,18 +333,47 @@ app.get('/stats', (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`
+// Initialize blockchain then start server
+(async () => {
+  try {
+    // Initialize blockchain connection
+    await initBlockchain();
+
+    // Start server
+    server.listen(PORT, () => {
+      console.log(`
 ╔═══════════════════════════════════════╗
 ║     🎮 DOT ARENA SERVER RUNNING       ║
 ╠═══════════════════════════════════════╣
 ║  Port: ${PORT}
 ║  Tick Rate: ${TICK_RATE} Hz
 ║  World Size: ${gameState.WORLD_WIDTH}x${gameState.WORLD_HEIGHT}
+║  Blockchain: ✅ CONNECTED
 ║  Status: ✅ READY
 ╚═══════════════════════════════════════╝
-  `);
-});
+      `);
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    console.error('⚠️  Starting in OFFLINE mode (no blockchain)');
+
+    // Start server anyway in offline mode
+    server.listen(PORT, () => {
+      console.log(`
+╔═══════════════════════════════════════╗
+║     🎮 DOT ARENA SERVER RUNNING       ║
+╠═══════════════════════════════════════╣
+║  Port: ${PORT}
+║  Tick Rate: ${TICK_RATE} Hz
+║  World Size: ${gameState.WORLD_WIDTH}x${gameState.WORLD_HEIGHT}
+║  Blockchain: ❌ OFFLINE
+║  Status: ⚠️  OFFLINE MODE
+╚═══════════════════════════════════════╝
+      `);
+    });
+  }
+})();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

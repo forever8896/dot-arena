@@ -9,8 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@polkadot/keyring": "^13.5.8",
+    "@polkadot/util-crypto": "^13.5.8",
     "cors": "^2.8.5",
     "dedot": "0.18.5",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "msgpack-lite": "^0.1.26",
     "phaser": "^3.80.1",

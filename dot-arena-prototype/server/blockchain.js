@@ -5,9 +5,15 @@
 
 import { DedotClient, WsProvider } from 'dedot';
 import { Contract } from 'dedot/contracts';
+import { Keyring } from '@polkadot/keyring';
+import { cryptoWaitReady } from '@polkadot/util-crypto';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -25,6 +31,7 @@ const CONFIG = {
 let client = null;
 let contract = null;
 let contractMetadata = null;
+let serverKeypair = null;
 
 // Track paid players
 const paidPlayers = new Map(); // walletAddress -> { playerId, timestamp, txHash, verified }
@@ -37,6 +44,26 @@ export async function initBlockchain() {
     console.log('⛓️  Initializing blockchain connection...');
     console.log(`  RPC: ${CONFIG.rpcEndpoint}`);
     console.log(`  Contract: ${CONFIG.contractAddress}`);
+
+    // Initialize crypto
+    await cryptoWaitReady();
+
+    // Initialize server keypair if seed is provided
+    if (CONFIG.serverWalletSeed) {
+      const keyring = new Keyring({ type: 'sr25519' });
+      serverKeypair = keyring.addFromUri(CONFIG.serverWalletSeed);
+      console.log(`🔑 Server wallet loaded: ${serverKeypair.address}`);
+
+      // Verify it matches expected address
+      if (CONFIG.serverWalletAddress && serverKeypair.address !== CONFIG.serverWalletAddress) {
+        console.warn(`⚠️  Address mismatch!`);
+        console.warn(`   Expected: ${CONFIG.serverWalletAddress}`);
+        console.warn(`   Got: ${serverKeypair.address}`);
+      }
+    } else {
+      console.warn(`⚠️  No server wallet seed provided - running in READ-ONLY mode`);
+      console.warn(`   Set SERVER_WALLET_SEED in .env to enable kill recording`);
+    }
 
     // Load contract metadata
     const metadataPath = join(__dirname, '../contracts/dot_arena/target/ink/dot_arena.json');
@@ -52,7 +79,7 @@ export async function initBlockchain() {
       contractMetadata,
       CONFIG.contractAddress,
       {
-        defaultCaller: CONFIG.serverWalletAddress || '0x0000000000000000000000000000000000000000'
+        defaultCaller: serverKeypair?.address || CONFIG.serverWalletAddress || '0x0000000000000000000000000000000000000000'
       }
     );
 
@@ -178,9 +205,9 @@ export async function recordKillOnChain(killerWallet, victimWallet) {
     }
 
     // Check server wallet is configured
-    if (!CONFIG.serverWalletSeed || !CONFIG.serverWalletAddress) {
+    if (!serverKeypair) {
       console.error('❌ Server wallet not configured! Cannot record kill on-chain.');
-      console.error('   Set SERVER_WALLET_ADDRESS and SERVER_WALLET_SEED in environment');
+      console.error('   Set SERVER_WALLET_SEED in .env file');
       console.error('   ⚠️  Kill will NOT be recorded on-chain - no DOT will be awarded!');
       return {
         success: false,
@@ -189,60 +216,83 @@ export async function recordKillOnChain(killerWallet, victimWallet) {
       };
     }
 
-    // TODO: Implement actual transaction signing
-    // This requires:
-    // 1. Loading server keypair from secure storage
-    // 2. Creating the transaction
-    // 3. Signing with server keypair
-    // 4. Sending and waiting for confirmation
+    console.log(`📝 Creating transaction...`);
 
-    console.log('⚠️  Blockchain recording NOT IMPLEMENTED YET');
-    console.log('   Need to:');
-    console.log('   1. Set up server wallet keypair');
-    console.log('   2. Get owner to authorize server wallet (set_game_server)');
-    console.log('   3. Implement transaction signing');
-
-    return {
-      success: false,
-      error: 'Not implemented',
-      offline: true
-    };
-
-    /*
-    // FUTURE IMPLEMENTATION:
-
-    // Import Keyring for signing
-    import { Keyring } from '@polkadot/keyring';
-
-    // Create keypair from seed
-    const keyring = new Keyring({ type: 'sr25519' });
-    const serverKeypair = keyring.addFromUri(CONFIG.serverWalletSeed);
-
-    // Create transaction
+    // Create the transaction to record_kill
     const tx = contract.tx.recordKill(killerWallet, victimWallet);
 
-    // Sign and send
+    console.log(`✍️  Signing and sending transaction...`);
+
+    // Sign and send the transaction
     const result = await new Promise((resolve, reject) => {
-      tx.signAndSend(serverKeypair, ({ status, dispatchError }) => {
-        if (status.type === 'Finalized') {
+      const timeout = setTimeout(() => {
+        reject(new Error('Transaction timeout after 60 seconds'));
+      }, 60000);
+
+      tx.signAndSend(serverKeypair, ({ status, dispatchError, events }) => {
+        console.log(`   Status: ${status.type}`);
+
+        // Transaction is in a block
+        if (status.type === 'Finalized' || status.type === 'BestChainBlockIncluded') {
+          clearTimeout(timeout);
+
           if (dispatchError) {
-            reject(new Error('Transaction failed'));
+            // Parse the error
+            let errorMessage = 'Transaction failed';
+
+            if (dispatchError.isModule) {
+              try {
+                const decoded = client.registry.findMetaError(dispatchError.asModule);
+                errorMessage = `${decoded.section}.${decoded.name}: ${decoded.docs}`;
+              } catch (e) {
+                errorMessage = `Module error: ${dispatchError.asModule}`;
+              }
+            } else {
+              errorMessage = dispatchError.toString();
+            }
+
+            console.error(`❌ Transaction failed: ${errorMessage}`);
+            reject(new Error(errorMessage));
+
           } else {
-            resolve({ success: true, txHash: status.asFinalized.toString() });
+            // Success!
+            const blockHash = status.type === 'Finalized'
+              ? status.asFinalized.toHex()
+              : status.asBestChainBlockIncluded?.toHex();
+
+            console.log(`✅ Transaction finalized in block: ${blockHash}`);
+
+            // Log events
+            events.forEach(({ event }) => {
+              const { section, method, data } = event;
+              console.log(`   Event: ${section}.${method}`, data.toHuman());
+            });
+
+            resolve({
+              success: true,
+              txHash: blockHash,
+              events: events.map(({ event }) => ({
+                section: event.section,
+                method: event.method,
+                data: event.data.toHuman()
+              }))
+            });
           }
         }
+      }).catch(error => {
+        clearTimeout(timeout);
+        reject(error);
       });
     });
 
     return result;
-    */
 
   } catch (error) {
     console.error('❌ Failed to record kill on-chain:', error);
     return {
       success: false,
       error: error.message,
-      offline: true
+      offline: false
     };
   }
 }
