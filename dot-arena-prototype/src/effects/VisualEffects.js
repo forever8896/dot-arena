@@ -11,6 +11,12 @@ export class BulletTrailEffect {
     this.trailParticles = [];
     this.maxTrailLength = this.getTrailLength();
     this.trailColor = this.getTrailColor();
+
+    // OPTIMIZATION: Create object pool for trail particles
+    if (!scene.trailPool) {
+      scene.trailPool = [];
+      scene.trailPoolIndex = 0;
+    }
   }
 
   getTrailLength() {
@@ -36,15 +42,35 @@ export class BulletTrailEffect {
   update() {
     if (!this.bullet || !this.bullet.active) return;
 
-    // Create solid geometric trail particle (same size as bullet)
-    const trail = this.scene.add.circle(
-      this.bullet.x,
-      this.bullet.y,
-      this.bullet.displayWidth * 0.8,
-      this.trailColor,
-      1.0  // Fully opaque
-    );
-    trail.setDepth(4);
+    // OPTIMIZATION: Reuse trail particles from pool instead of creating new ones
+    let trail;
+    const pool = this.scene.trailPool;
+
+    if (pool.length < 200) { // Max pool size
+      // Create new particle if pool not full
+      trail = this.scene.add.circle(
+        this.bullet.x,
+        this.bullet.y,
+        this.bullet.displayWidth * 0.8,
+        this.trailColor,
+        1.0
+      );
+      trail.setDepth(4);
+      pool.push(trail);
+    } else {
+      // Reuse from pool (circular buffer)
+      trail = pool[this.scene.trailPoolIndex];
+      this.scene.trailPoolIndex = (this.scene.trailPoolIndex + 1) % pool.length;
+
+      // Reset particle properties
+      trail.setPosition(this.bullet.x, this.bullet.y);
+      trail.setScale(1);
+      trail.setAlpha(1);
+      trail.setActive(true);
+      trail.setVisible(true);
+      trail.setFillStyle(this.trailColor, 1.0);
+      trail.setRadius(this.bullet.displayWidth * 0.8);
+    }
 
     // Scale down and disappear abruptly (no fade)
     this.scene.tweens.add({
@@ -53,20 +79,28 @@ export class BulletTrailEffect {
       duration: 150,
       ease: 'Power2',
       onComplete: () => {
-        trail.destroy();
+        trail.setVisible(false);
+        trail.setActive(false);
       }
     });
 
     this.trailParticles.push(trail);
     if (this.trailParticles.length > this.maxTrailLength) {
       const old = this.trailParticles.shift();
-      if (old && old.active) old.destroy();
+      if (old && old.active) {
+        old.setVisible(false);
+        old.setActive(false);
+      }
     }
   }
 
   destroy() {
+    // OPTIMIZATION: Don't destroy pooled particles, just hide them
     this.trailParticles.forEach(p => {
-      if (p && p.active) p.destroy();
+      if (p && p.active) {
+        p.setVisible(false);
+        p.setActive(false);
+      }
     });
     this.trailParticles = [];
   }

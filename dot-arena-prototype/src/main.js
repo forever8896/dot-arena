@@ -23,11 +23,14 @@ const config = {
   width: window.innerWidth,
   height: window.innerHeight,
   parent: 'game-container',
+  // OPTIMIZATION: Physics performance
   physics: {
     default: 'arcade',
     arcade: {
       gravity: { y: 0 }, // Top-down game, no gravity
-      debug: false // Set to true to see collision boxes
+      debug: false, // Set to true to see collision boxes
+      fps: 60,
+      fixedStep: true
     }
   },
   scene: [MenuScene, GameScene, EliminationScene],
@@ -41,7 +44,17 @@ const config = {
   render: {
     pixelArt: false,
     antialias: true,
-    roundPixels: true
+    roundPixels: true,
+    // OPTIMIZATION: Performance enhancements
+    batchSize: 4096,        // Increase batch size for more efficient rendering
+    maxTextures: 16,        // Support more texture units
+    powerPreference: 'high-performance'  // Prefer discrete GPU
+  },
+  // OPTIMIZATION: FPS monitoring and targeting
+  fps: {
+    target: 60,
+    forceSetTimeOut: false,
+    smoothStep: true
   }
 };
 

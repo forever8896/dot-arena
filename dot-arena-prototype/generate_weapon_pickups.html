@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Weapon Pickup Generator</title>
+    <style>
+        body {
+            background: #f4c2c2;
+            font-family: monospace;
+            padding: 20px;
+        }
+        canvas {
+            margin: 10px;
+            background: white;
+            border: 2px solid #00b4d8;
+        }
+        .weapon-group {
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Weapon Pickup Generator - World-Aligned Design</h1>
+    
+    <div class="weapon-group">
+        <h2>Shotgun (Champagne Pink)</h2>
+        <canvas id="shotgun" width="512" height="512"></canvas>
+    </div>
+    
+    <div class="weapon-group">
+        <h2>Sniper (Pacific Cyan)</h2>
+        <canvas id="sniper" width="512" height="512"></canvas>
+    </div>
+    
+    <div class="weapon-group">
+        <h2>Burst/Assault Rifle (Purple)</h2>
+        <canvas id="burst" width="512" height="512"></canvas>
+    </div>
+
+    <script>
+        // Color palettes matching world design
+        const colors = {
+            shotgun: {
+                primary: '#f5e4d7',    // Champagne Pink
+                secondary: '#f0d5c0',  // Warm champagne
+                dark: '#d4b5a0',       // Darker champagne
+                accent: '#fff8ed'      // Very light
+            },
+            sniper: {
+                primary: '#00b4d8',    // Pacific Cyan
+                secondary: '#33c9ed',  // Lighter cyan
+                dark: '#0077b6',       // Darker cyan
+                accent: '#90e0ef'      // Very light cyan
+            },
+            burst: {
+                primary: '#bb6bd9',    // Soft purple
+                secondary: '#d891ef',  // Light purple
+                dark: '#8b4fc9',       // Darker purple
+                accent: '#e5c3f5'      // Very light purple
+            }
+        };
+
+        function drawShotgun(ctx) {
+            const c = colors.shotgun;
+            ctx.clearRect(0, 0, 512, 512);
+            
+            // Main body - champagne pink with geometric style
+            ctx.fillStyle = c.primary;
+            ctx.fillRect(140, 220, 280, 80);
+            
+            // Barrel - dual barrels
+            ctx.fillStyle = c.dark;
+            ctx.fillRect(420, 235, 90, 25);
+            ctx.fillRect(420, 260, 90, 25);
+            
+            // Stock/grip - geometric
+            ctx.fillStyle = c.secondary;
+            ctx.beginPath();
+            ctx.moveTo(140, 220);
+            ctx.lineTo(80, 180);
+            ctx.lineTo(80, 320);
+            ctx.lineTo(140, 300);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Trigger guard - Pacific cyan accent
+            ctx.strokeStyle = '#00b4d8';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.arc(300, 300, 30, 0, Math.PI);
+            ctx.stroke();
+            
+            // Geometric details
+            ctx.fillStyle = c.accent;
+            ctx.fillRect(200, 240, 150, 40);
+            
+            // Highlights
+            ctx.fillStyle = c.dark;
+            ctx.fillRect(150, 225, 10, 70);
+            ctx.fillRect(240, 245, 80, 8);
+            
+            // Border accent
+            ctx.strokeStyle = c.dark;
+            ctx.lineWidth = 4;
+            ctx.strokeRect(140, 220, 280, 80);
+        }
+
+        function drawSniper(ctx) {
+            const c = colors.sniper;
+            ctx.clearRect(0, 0, 512, 512);
+            
+            // Long barrel - sleek Pacific cyan
+            ctx.fillStyle = c.primary;
+            ctx.fillRect(180, 245, 290, 30);
+            
+            // Scope - geometric hexagonal
+            ctx.fillStyle = c.dark;
+            // Scope body
+            ctx.fillRect(250, 200, 100, 40);
+            
+            // Scope lens
+            ctx.fillStyle = c.accent;
+            ctx.beginPath();
+            ctx.arc(300, 220, 18, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Scope mounts
+            ctx.fillStyle = c.secondary;
+            ctx.fillRect(260, 240, 15, 20);
+            ctx.fillRect(335, 240, 15, 20);
+            
+            // Body/receiver
+            ctx.fillStyle = c.secondary;
+            ctx.fillRect(150, 240, 100, 40);
+            
+            // Stock - geometric
+            ctx.fillStyle = c.primary;
+            ctx.beginPath();
+            ctx.moveTo(150, 240);
+            ctx.lineTo(70, 220);
+            ctx.lineTo(70, 300);
+            ctx.lineTo(150, 280);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Bipod
+            ctx.strokeStyle = c.dark;
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(380, 275);
+            ctx.lineTo(380, 320);
+            ctx.moveTo(420, 275);
+            ctx.lineTo(420, 320);
+            ctx.stroke();
+            
+            // Details
+            ctx.fillStyle = c.dark;
+            ctx.fillRect(190, 250, 270, 4);
+            ctx.fillRect(190, 266, 270, 4);
+            
+            // Border
+            ctx.strokeStyle = c.dark;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(180, 245, 290, 30);
+        }
+
+        function drawBurst(ctx) {
+            const c = colors.burst;
+            ctx.clearRect(0, 0, 512, 512);
+            
+            // Modern assault rifle body - purple theme
+            ctx.fillStyle = c.primary;
+            ctx.fillRect(180, 230, 250, 60);
+            
+            // Barrel
+            ctx.fillStyle = c.dark;
+            ctx.fillRect(430, 245, 70, 30);
+            
+            // Magazine
+            ctx.fillStyle = c.dark;
+            ctx.fillRect(280, 290, 50, 80);
+            ctx.fillRect(285, 295, 40, 70);
+            
+            // Stock
+            ctx.fillStyle = c.secondary;
+            ctx.beginPath();
+            ctx.moveTo(180, 230);
+            ctx.lineTo(100, 210);
+            ctx.lineTo(100, 310);
+            ctx.lineTo(180, 290);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Carry handle / sight
+            ctx.fillStyle = c.secondary;
+            ctx.fillRect(250, 200, 100, 25);
+            
+            // Sight aperture
+            ctx.fillStyle = c.accent;
+            ctx.fillRect(290, 205, 20, 15);
+            
+            // Handguard
+            ctx.fillStyle = c.accent;
+            ctx.fillRect(350, 240, 60, 40);
+            
+            // Geometric details
+            ctx.fillStyle = c.dark;
+            ctx.fillRect(360, 247, 2, 26);
+            ctx.fillRect(370, 247, 2, 26);
+            ctx.fillRect(380, 247, 2, 26);
+            ctx.fillRect(390, 247, 2, 26);
+            
+            // Muzzle
+            ctx.fillStyle = c.dark;
+            ctx.fillRect(500, 250, 10, 20);
+            
+            // Border
+            ctx.strokeStyle = c.dark;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(180, 230, 250, 60);
+        }
+
+        // Draw all weapons
+        drawShotgun(document.getElementById('shotgun').getContext('2d'));
+        drawSniper(document.getElementById('sniper').getContext('2d'));
+        drawBurst(document.getElementById('burst').getContext('2d'));
+
+        // Download function
+        setTimeout(() => {
+            ['shotgun', 'sniper', 'burst'].forEach(weapon => {
+                const canvas = document.getElementById(weapon);
+                const link = document.createElement('a');
+                link.download = `${weapon}pickup-new.png`;
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }, 1000);
+    </script>
+</body>
+</html>

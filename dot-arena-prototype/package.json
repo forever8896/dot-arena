@@ -9,9 +9,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "phaser": "^3.80.1"
+    "cors": "^2.8.5",
+    "dedot": "^0.18.5",
+    "express": "^5.1.0",
+    "msgpack-lite": "^0.1.26",
+    "phaser": "^3.80.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "typink": "^0.5.2"
   },
   "devDependencies": {
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.17",
     "vite": "^5.0.0"
   }
 }

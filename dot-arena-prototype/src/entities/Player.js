@@ -15,15 +15,25 @@ export default class Player {
     // Detect if mobile device
     this.isMobile = this.scene.sys.game.device.input.touch;
 
-    // Create shadow ellipse below character
-    this.shadow = scene.add.ellipse(x, y, 60, 20, 0x2a2b2a, 0.3); // Jet
-    this.shadow.setDepth(9); // Just below player
-
     // Create sprite using the first frame of the idle animation
     this.sprite = scene.physics.add.sprite(x, y, 'character-idle-frame64');
     this.sprite.setScale(0.08); // Scale down for 1024x1024 images
     this.sprite.setCollideWorldBounds(true); // Keep player within world bounds
     this.sprite.setDepth(10);
+
+    // Configure physics body for smooth collisions
+    this.sprite.body.setSize(100, 100); // Adjust hitbox size (1024x1024 sprite scaled to 0.08)
+    this.sprite.body.setOffset(462, 462); // Center the hitbox
+    this.sprite.body.setMaxVelocity(400, 400); // Prevent extreme velocities
+    this.sprite.body.setDrag(0); // No drag for responsive movement
+    this.sprite.body.setBounce(0, 0); // No bounce off walls
+
+    // Create shadow sprite that matches character shape
+    this.shadow = scene.add.sprite(x, y, 'character-idle-frame64');
+    this.shadow.setScale(0.08); // Match sprite scale
+    this.shadow.setDepth(9); // Just below player
+    this.shadow.setTint(0x000000); // Make it black
+    this.shadow.setAlpha(0.4); // Semi-transparent shadow
 
     // Play idle animation initially
     this.sprite.play('idle');
@@ -54,6 +64,13 @@ export default class Player {
     // Create ability cooldown indicators around player
     this.cooldownIndicators = scene.add.graphics();
     this.cooldownIndicators.setDepth(11); // Above player
+
+    // OPTIMIZATION: Track last drawn values to avoid unnecessary graphic operations
+    this.lastFirePercent = -1;
+    this.lastDashPercent = -1;
+
+    // Store offset for positioning (drawn at 0,0 then positioned via setPosition)
+    this.indicatorYOffset = -50;
 
     // Setup controls based on device
     this.setupInput();
@@ -103,21 +120,32 @@ export default class Player {
       this.handleMovement();
     }
 
-    // Update shadow position to follow player
+    // Update shadow to match player sprite
     if (this.shadow) {
-      // Position shadow at player's feet (slightly below center)
-      // Sprite height is approximately 1024 * 0.08 = 81.92 pixels
-      // Offset by 35% of height for better positioning
-      const spriteHeight = 1024 * 0.08; // Original height * scale
-      this.shadow.setPosition(this.sprite.x, this.sprite.y + (spriteHeight * 0.35));
+      // Shadow offset (cast to bottom-right to match lighting)
+      const shadowOffsetX = 4;
+      const shadowOffsetY = 6;
 
-      // Make shadow slightly larger when running
-      const isRunning = this.sprite.anims.currentAnim?.key === 'run';
-      if (isRunning) {
-        this.shadow.setScale(1.1, 1.1);
-      } else {
-        this.shadow.setScale(1.0, 1.0);
+      // Position shadow with offset for 3D effect
+      this.shadow.setPosition(
+        this.sprite.x + shadowOffsetX,
+        this.sprite.y + shadowOffsetY
+      );
+
+      // Match sprite's current texture frame for animation
+      if (this.sprite.texture) {
+        this.shadow.setTexture(this.sprite.texture.key);
+        this.shadow.setFrame(this.sprite.frame.name);
       }
+
+      // Match sprite flip
+      this.shadow.setFlipX(this.sprite.flipX);
+
+      // Match sprite scale
+      this.shadow.setScale(this.sprite.scaleX, this.sprite.scaleY);
+
+      // Make shadow slightly flattened for ground contact
+      this.shadow.setScale(this.sprite.scaleX * 1.0, this.sprite.scaleY * 0.6);
     }
 
     // Handle auto-aim targeting
@@ -255,8 +283,10 @@ export default class Player {
     // Create dash trail effect
     this.createDashTrail();
 
-    // Play dash sound
-    this.scene.sound.play('dodge-sound', { volume: 0.4 });
+    // Play dash sound using safe method
+    if (this.scene.playSoundSafe) {
+      this.scene.playSoundSafe('dodge-sound', { volume: 0.4 });
+    }
     console.log('💨 DASH!');
 
     // End dash after duration
@@ -315,7 +345,10 @@ export default class Player {
 
     // Play reload sound when weapon transitions from not ready to ready
     if (!this.wasReadyToFire && isReadyToFire) {
-      this.scene.sound.play('reload-sound', { volume: 0.3 });
+      // Use safe sound method if available, prevents rapid reload sound spam
+      if (this.scene.playSoundSafe) {
+        this.scene.playSoundSafe('reload-sound', { volume: 0.3 });
+      }
     }
 
     this.wasReadyToFire = isReadyToFire;
@@ -389,8 +422,10 @@ export default class Player {
     // Muzzle flash
     this.createMuzzleFlash();
 
-    // Audio feedback
-    this.scene.sound.play('shoot-sound', { volume: 0.3 });
+    // Audio feedback - use safe method to prevent sound overlap
+    if (this.scene.playSoundSafe) {
+      this.scene.playSoundSafe('shoot-sound', { volume: 0.3 });
+    }
     console.log(`💥 ${this.currentWeapon.getName()} fired!`);
   }
 
@@ -456,8 +491,10 @@ export default class Player {
     // Screen shake on damage
     this.scene.cameras.main.shake(200, 0.005);
 
-    // Play dodge/damage sound
-    this.scene.sound.play('dodge-sound', { volume: 0.5 });
+    // Play dodge/damage sound using safe method
+    if (this.scene.playSoundSafe) {
+      this.scene.playSoundSafe('dodge-sound', { volume: 0.5 });
+    }
 
     console.log(`💔 Took ${amount} damage! HP: ${this.hp}/${this.maxHp}`);
 
@@ -495,96 +532,161 @@ export default class Player {
   }
 
   updateCooldownIndicators() {
-    this.cooldownIndicators.clear();
+    // FIX: Always update position first to prevent lag
+    this.cooldownIndicators.setPosition(this.sprite.x, this.sprite.y + this.indicatorYOffset);
 
-    const barWidth = 40; // Width of each indicator bar
-    const barHeight = 4; // Height of bar
-    const yOffset = -50; // Position above player
-    const spacing = 8; // Space between the two bars
-
-    // Calculate cooldown percentages
+    // OPTIMIZATION: Only redraw graphics if values changed significantly (>1%)
     const now = this.scene.time.now;
     const firePercent = Math.min(100, ((now - this.lastFired) / this.currentWeapon.config.fireRate) * 100);
     const dashPercent = this.getDashCooldownPercent();
 
-    // FIRE COOLDOWN INDICATOR (Top bar)
-    const fireColor = firePercent >= 100 ? 0x00FF00 : 0xFFFFFF; // Green when ready, white when charging
-    const fireAlpha = firePercent >= 100 ? 1.0 : 0.7;
+    if (Math.abs(firePercent - this.lastFirePercent) < 1 &&
+        Math.abs(dashPercent - this.lastDashPercent) < 1) {
+      return; // Skip redraw if no significant change (but position already updated!)
+    }
+
+    this.lastFirePercent = firePercent;
+    this.lastDashPercent = dashPercent;
+
+    this.cooldownIndicators.clear();
+
+    const barWidth = 50; // Width of each indicator bar
+    const barHeight = 6; // Height of bar
+    const spacing = 4; // Space between the two bars
+    const iconSize = 12; // Size for weapon/dash icons (increased from 8)
+
+    // SHOOT BAR (Top bar) - drawn at 0,0 relative to graphics position
+    const fireColor = 0xFF8C00; // Orange
+    const fireAlpha = firePercent >= 100 ? 1.0 : 0.6;
     const fireWidth = (firePercent / 100) * barWidth;
 
     // Background bar for fire
-    this.cooldownIndicators.fillStyle(0x2a2b2a, 0.5); // Jet
-    this.cooldownIndicators.fillRect(
-      this.sprite.x - barWidth / 2,
-      this.sprite.y + yOffset,
-      barWidth,
-      barHeight
+    this.cooldownIndicators.fillStyle(0x000000, 0.7);
+    this.cooldownIndicators.fillRoundedRect(
+      -barWidth / 2 - 2,
+      -2,
+      barWidth + 4,
+      barHeight + 4,
+      2
     );
 
-    // Fire progress bar
+    // Fire progress bar with rounded corners
     if (firePercent > 0) {
       this.cooldownIndicators.fillStyle(fireColor, fireAlpha);
-      this.cooldownIndicators.fillRect(
-        this.sprite.x - barWidth / 2,
-        this.sprite.y + yOffset,
+      this.cooldownIndicators.fillRoundedRect(
+        -barWidth / 2,
+        0,
         fireWidth,
-        barHeight
+        barHeight,
+        2
       );
 
       // Add glow effect when ready
       if (firePercent >= 100) {
-        this.cooldownIndicators.fillStyle(fireColor, 0.3);
-        this.cooldownIndicators.fillRect(
-          this.sprite.x - barWidth / 2 - 2,
-          this.sprite.y + yOffset - 1,
-          barWidth + 4,
-          barHeight + 2
+        this.cooldownIndicators.lineStyle(2, fireColor, 0.5);
+        this.cooldownIndicators.strokeRoundedRect(
+          -barWidth / 2 - 1,
+          -1,
+          barWidth + 2,
+          barHeight + 2,
+          2
         );
       }
     }
 
-    // DASH COOLDOWN INDICATOR (Bottom bar)
-    const dashColor = dashPercent >= 100 ? 0x00FFFF : 0xFF1B8D; // Cyan when ready, pink when charging
-    const dashAlpha = dashPercent >= 100 ? 1.0 : 0.7;
+    // Weapon icon (bigger gun shape on the left)
+    const weaponColor = this.currentWeapon.getVisualColor();
+    this.cooldownIndicators.fillStyle(weaponColor, 1.0);
+    // Gun barrel (longer and thicker)
+    this.cooldownIndicators.fillRect(-barWidth / 2 - iconSize - 6, -1, iconSize + 2, 3);
+    // Gun handle
+    this.cooldownIndicators.fillRect(-barWidth / 2 - iconSize - 4, 1, 4, 5);
+    // Gun trigger guard
+    this.cooldownIndicators.fillRect(-barWidth / 2 - iconSize - 6, 4, 3, 2);
+
+    // Border for shoot bar
+    this.cooldownIndicators.lineStyle(1, 0xffffff, 0.4);
+    this.cooldownIndicators.strokeRoundedRect(
+      -barWidth / 2 - 2,
+      -2,
+      barWidth + 4,
+      barHeight + 4,
+      2
+    );
+
+    // DASH BAR (Bottom bar)
+    const dashY = barHeight + spacing + 2;
+    const dashColor = dashPercent >= 100 ? 0x00FFFF : 0xFF1B8D;
+    const dashAlpha = dashPercent >= 100 ? 1.0 : 0.8;
     const dashWidth = (dashPercent / 100) * barWidth;
 
     // Background bar for dash
-    this.cooldownIndicators.fillStyle(0x2a2b2a, 0.5); // Jet
-    this.cooldownIndicators.fillRect(
-      this.sprite.x - barWidth / 2,
-      this.sprite.y + yOffset + barHeight + spacing,
-      barWidth,
-      barHeight
+    this.cooldownIndicators.fillStyle(0x000000, 0.7);
+    this.cooldownIndicators.fillRoundedRect(
+      -barWidth / 2 - 2,
+      dashY - 2,
+      barWidth + 4,
+      barHeight + 4,
+      2
     );
 
-    // Dash progress bar
+    // Dash progress bar with rounded corners
     if (dashPercent > 0) {
       this.cooldownIndicators.fillStyle(dashColor, dashAlpha);
-      this.cooldownIndicators.fillRect(
-        this.sprite.x - barWidth / 2,
-        this.sprite.y + yOffset + barHeight + spacing,
+      this.cooldownIndicators.fillRoundedRect(
+        -barWidth / 2,
+        dashY,
         dashWidth,
-        barHeight
+        barHeight,
+        2
       );
 
       // Add glow effect when ready
       if (dashPercent >= 100) {
-        this.cooldownIndicators.fillStyle(dashColor, 0.3);
-        this.cooldownIndicators.fillRect(
-          this.sprite.x - barWidth / 2 - 2,
-          this.sprite.y + yOffset + barHeight + spacing - 1,
-          barWidth + 4,
-          barHeight + 2
+        this.cooldownIndicators.lineStyle(2, dashColor, 0.5);
+        this.cooldownIndicators.strokeRoundedRect(
+          -barWidth / 2 - 1,
+          dashY - 1,
+          barWidth + 2,
+          barHeight + 2,
+          2
         );
       }
     }
+
+    // Dash icon (bigger lightning bolt on the left)
+    const dashIconColor = dashPercent >= 100 ? 0x00FFFF : 0xFFFFFF;
+    this.cooldownIndicators.fillStyle(dashIconColor, 1.0);
+    // Bigger lightning bolt shape
+    this.cooldownIndicators.fillTriangle(
+      -barWidth / 2 - iconSize - 2, dashY - 2,
+      -barWidth / 2 - iconSize - 10, dashY + 3,
+      -barWidth / 2 - iconSize - 5, dashY + 3
+    );
+    this.cooldownIndicators.fillTriangle(
+      -barWidth / 2 - iconSize - 6, dashY + 3,
+      -barWidth / 2 - iconSize, dashY + 8,
+      -barWidth / 2 - iconSize - 6, dashY + 3
+    );
+
+    // Border for dash bar
+    this.cooldownIndicators.lineStyle(1, 0xffffff, 0.4);
+    this.cooldownIndicators.strokeRoundedRect(
+      -barWidth / 2 - 2,
+      dashY - 2,
+      barWidth + 4,
+      barHeight + 4,
+      2
+    );
   }
 
   die() {
     console.log('☠️ Player died!');
 
-    // Play death sound
-    this.scene.sound.play('death-sound', { volume: 0.6 });
+    // Play death sound using safe method
+    if (this.scene.playSoundSafe) {
+      this.scene.playSoundSafe('death-sound', { volume: 0.6 });
+    }
 
     // Hide cooldown indicators and targeting visuals
     this.cooldownIndicators.clear();

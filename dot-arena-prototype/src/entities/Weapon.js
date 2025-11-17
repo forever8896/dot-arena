@@ -169,6 +169,32 @@ export class WeaponPickup {
     // Use detailed weapon graphics instead of simple lines
     const config = new Weapon(this.scene, this.weaponType).config;
 
+    // Define world-aligned color scheme for each weapon type
+    const worldColors = {
+      'rapid': {
+        primary: 0xd84797,    // Mulberry - matches bullets
+        secondary: 0xff1b8d,  // Hot Pink - accent
+        glow: 0xe6007a        // Polkadot Pink - glow
+      },
+      'sniper': {
+        primary: 0x00b4d8,    // Pacific Cyan - matches world accent
+        secondary: 0x33c9ed,  // Lighter Pacific Cyan
+        glow: 0x90e0ef        // Very light cyan
+      },
+      'shotgun': {
+        primary: 0xf5e4d7,    // Champagne Pink - matches background accent
+        secondary: 0xf0d5c0,  // Warm champagne
+        glow: 0xfff8ed        // Very light warm tone
+      },
+      'burst': {
+        primary: 0xbb6bd9,    // Softer purple (between mulberry and pacific cyan)
+        secondary: 0xd891ef,  // Light purple
+        glow: 0xe5c3f5        // Very light purple
+      }
+    };
+
+    const weaponColors = worldColors[this.weaponType] || worldColors['rapid'];
+
     // Check if we have a custom sprite for this weapon type
     const customSpriteMap = {
       'shotgun': 'pickup-shotgun',
@@ -187,18 +213,19 @@ export class WeaponPickup {
       textureKey = WeaponGraphics.generateTexture(this.scene, this.weaponType, 1);
     }
 
-    // Create drop shadow for weapon pickup (darker for more contrast)
-    this.shadow = this.scene.add.ellipse(x, y + 10, 50, 18, 0x2a2b2a, 0.5);
+    // OPTIMIZATION: Reduced from 12 objects to 5 objects (shadow, sprite, glow, ring, container)
+
+    // Create drop shadow for weapon pickup
+    this.shadow = this.scene.add.ellipse(x, y + 10, 50, 18, 0x00b4d8, 0.3);
     this.shadow.setDepth(6);
     this.shadow.setBlendMode(Phaser.BlendModes.MULTIPLY);
-
-    // Create dark backing circle for contrast against background
-    this.backingCircle = this.scene.add.circle(x, y, 35, 0x2a2b2a, 0.7);
-    this.backingCircle.setDepth(7);
 
     // Create sprite with detailed graphics
     this.sprite = this.scene.physics.add.sprite(x, y, textureKey);
     this.sprite.setDepth(8);
+
+    // Apply weapon-specific tint to match color scheme
+    this.sprite.setTint(weaponColors.primary);
 
     // Scale appropriately based on sprite type
     if (this.useCustomSprite) {
@@ -207,41 +234,23 @@ export class WeaponPickup {
       this.sprite.setScale(0.6); // Generated graphics are smaller
     }
 
-    // Add enhanced holographic glow effect (brighter)
-    this.glowCircle = this.scene.add.circle(x, y, 32, config.bulletColor, 0.4);
+    // Add enhanced holographic glow effect with weapon colors
+    this.glowCircle = this.scene.add.circle(x, y, 32, weaponColors.glow, 0.5);
     this.glowCircle.setDepth(7);
     this.glowCircle.setBlendMode(Phaser.BlendModes.ADD); // Additive blending for brightness
 
-    // Add outer ring (brighter)
-    this.outerRing = this.scene.add.circle(x, y, 42, config.bulletColor, 0);
-    this.outerRing.setStrokeStyle(3, config.bulletColor, 0.9);
-    this.outerRing.setDepth(8);
-
-    // Add inner ring (brighter)
-    this.innerRing = this.scene.add.circle(x, y, 28, config.bulletColor, 0);
-    this.innerRing.setStrokeStyle(2, config.bulletColor, 1.0);
-    this.innerRing.setDepth(8);
-
-    // Add hexagonal frame (brighter and larger)
-    this.hexFrame = this.scene.add.graphics();
-    this.hexFrame.setPosition(x, y);
-    this.hexFrame.setDepth(8);
-    this.drawHexagon(this.hexFrame, 38, config.bulletColor, 0.8);
-
-    // Add vertical scan lines effect (brighter)
-    this.scanLines = [];
-    for (let i = 0; i < 3; i++) {
-      const line = this.scene.add.rectangle(x, y - 40 + i * 40, 60, 3, config.bulletColor, 0.6);
-      line.setDepth(8);
-      this.scanLines.push(line);
-    }
+    // OPTIMIZATION: Single ring instead of multiple rings and hexagon
+    this.ring = this.scene.add.circle(x, y, 42, weaponColors.primary, 0);
+    this.ring.setStrokeStyle(2, weaponColors.primary, 0.7);
+    this.ring.setDepth(8);
 
     // Store reference
     this.sprite.weaponPickupRef = this;
 
+    // OPTIMIZATION: Reduced from 11 tweens to 4 tweens
     // Floating animation (including all visual elements)
     this.scene.tweens.add({
-      targets: [this.sprite, this.backingCircle, this.glowCircle, this.outerRing, this.innerRing, this.hexFrame, ...this.scanLines],
+      targets: [this.sprite, this.glowCircle, this.ring],
       y: y - 10,
       duration: 1000,
       yoyo: true,
@@ -261,21 +270,11 @@ export class WeaponPickup {
     });
 
     // Rotating animation for sprite
-    // Custom sprites spin faster for more visual appeal
     const spinDuration = this.useCustomSprite ? 2000 : 3000;
     this.scene.tweens.add({
       targets: this.sprite,
       angle: 360,
       duration: spinDuration,
-      repeat: -1,
-      ease: 'Linear'
-    });
-
-    // Counter-rotating hexagon
-    this.scene.tweens.add({
-      targets: this.hexFrame,
-      angle: -360,
-      duration: 4000,
       repeat: -1,
       ease: 'Linear'
     });
@@ -289,40 +288,6 @@ export class WeaponPickup {
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut'
-    });
-
-    // Expanding rings
-    this.scene.tweens.add({
-      targets: this.outerRing,
-      radius: 50,
-      alpha: 0.2,
-      duration: 1500,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
-
-    this.scene.tweens.add({
-      targets: this.innerRing,
-      radius: 30,
-      alpha: 0.5,
-      duration: 1200,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
-
-    // Scanning lines animation
-    this.scanLines.forEach((line, index) => {
-      this.scene.tweens.add({
-        targets: line,
-        alpha: { from: 0.1, to: 0.6 },
-        duration: 800,
-        delay: index * 200,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut'
-      });
     });
   }
 
@@ -350,12 +315,8 @@ export class WeaponPickup {
     this.isAvailable = false;
     this.sprite.setVisible(false);
     this.shadow.setVisible(false);
-    this.backingCircle.setVisible(false);
     this.glowCircle.setVisible(false);
-    this.outerRing.setVisible(false);
-    this.innerRing.setVisible(false);
-    this.hexFrame.setVisible(false);
-    this.scanLines.forEach(line => line.setVisible(false));
+    this.ring.setVisible(false);
 
     // Play pickup sound
     console.log(`🔫 Picked up ${this.weaponType}!`);
@@ -372,12 +333,8 @@ export class WeaponPickup {
     this.isAvailable = true;
     this.sprite.setVisible(true);
     this.shadow.setVisible(true);
-    this.backingCircle.setVisible(true);
     this.glowCircle.setVisible(true);
-    this.outerRing.setVisible(true);
-    this.innerRing.setVisible(true);
-    this.hexFrame.setVisible(true);
-    this.scanLines.forEach(line => line.setVisible(true));
+    this.ring.setVisible(true);
 
     // Get the correct target scale for the sprite
     const targetSpriteScale = this.useCustomSprite ? 0.15 : 0.6;
@@ -393,7 +350,7 @@ export class WeaponPickup {
 
     // Other elements scale to 1
     this.scene.tweens.add({
-      targets: [this.shadow, this.backingCircle, this.glowCircle, this.outerRing, this.innerRing, this.hexFrame, ...this.scanLines],
+      targets: [this.shadow, this.glowCircle, this.ring],
       scale: { from: 0, to: 1 },
       alpha: { from: 0, to: 1 },
       duration: 300,

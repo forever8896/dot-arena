@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
-import Player from '../entities/Player.js';
-import Enemy from '../entities/Enemy.js';
+import LocalPlayer from '../entities/LocalPlayer.js';
+import RemotePlayer from '../entities/RemotePlayer.js';
+import NetworkManager from '../network/NetworkManager.js';
+import Enemy from '../entities/Enemy.js'; // Keep for single-player mode
 import { WeaponPickup } from '../entities/Weapon.js';
 import { BulletTrailEffect, ImpactEffect, WeaponSwitchEffect, ScreenEffects } from '../effects/VisualEffects.js';
 
@@ -13,6 +15,16 @@ export default class GameScene extends Phaser.Scene {
     this.kills = 0;
     this.survivalTime = 0;
     this.sessionStartTime = 0;
+
+    // NEW: Multiplayer properties
+    this.isMultiplayer = true; // Toggle for testing
+    this.network = null;
+    this.myPlayerId = null;
+    this.localPlayer = null;
+    this.remotePlayers = new Map(); // playerId -> RemotePlayer
+
+    // Client-side full state (for delta compression)
+    this.clientGameState = null;
   }
 
   preload() {
@@ -136,14 +148,144 @@ export default class GameScene extends Phaser.Scene {
     // Keep original colors and appearance
   }
 
-  create() {
-    // Create Polkadot pink gradient background
+  initializeSoundSystem() {
+    // OPTIMIZATION: Pool of sound objects to avoid creating new ones every time
+    this.soundPool = new Map();
+
+    // Track actively playing sounds to prevent overlap
+    this.activeSounds = new Map();
+
+    // Sound configuration with cooldowns to prevent spam
+    this.soundConfig = {
+      'shoot-sound': { cooldown: 50, lastPlayed: 0 },      // 50ms between shots
+      'reload-sound': { cooldown: 500, lastPlayed: 0 },    // 500ms between reloads
+      'pickup-sound': { cooldown: 200, lastPlayed: 0 },    // 200ms between pickups
+      'dodge-sound': { cooldown: 100, lastPlayed: 0 },     // 100ms between dodge sounds
+      'death-sound': { cooldown: 1000, lastPlayed: 0 }     // 1s between death sounds
+    };
+
+    // Verify all sounds are loaded before allowing playback
+    this.soundsReady = false;
+    const soundKeys = ['shoot-sound', 'reload-sound', 'pickup-sound', 'dodge-sound', 'death-sound'];
+
+    let loadedCount = 0;
+    soundKeys.forEach(key => {
+      if (this.cache.audio.exists(key)) {
+        loadedCount++;
+      }
+    });
+
+    this.soundsReady = (loadedCount === soundKeys.length);
+
+    if (!this.soundsReady) {
+      console.warn('⚠️ Some sounds failed to load. Sound playback may be limited.');
+    } else {
+      console.log('✅ All sounds loaded successfully');
+    }
+  }
+
+  // OPTIMIZATION: Safe sound playing method with pooling, rate limiting and overlap prevention
+  playSoundSafe(soundKey, config = {}) {
+    // Check if sounds are ready
+    if (!this.soundsReady || !this.cache.audio.exists(soundKey)) {
+      console.warn(`Sound ${soundKey} not available`);
+      return null;
+    }
+
+    const now = this.time.now;
+    const soundSettings = this.soundConfig[soundKey];
+
+    // Check cooldown to prevent rapid-fire spam
+    if (soundSettings && now - soundSettings.lastPlayed < soundSettings.cooldown) {
+      return null; // Skip playing if on cooldown
+    }
+
+    // Stop any currently playing instance of this sound to prevent overlap
+    if (this.activeSounds.has(soundKey)) {
+      const activeSound = this.activeSounds.get(soundKey);
+      if (activeSound && activeSound.isPlaying) {
+        activeSound.stop();
+      }
+    }
+
+    // OPTIMIZATION: Reuse sound object from pool
+    let sound;
+    if (this.soundPool.has(soundKey)) {
+      sound = this.soundPool.get(soundKey);
+    } else {
+      sound = this.sound.add(soundKey);
+      this.soundPool.set(soundKey, sound);
+    }
+
+    const soundConfig = {
+      volume: config.volume || 0.5,
+      ...config
+    };
+
+    sound.play(soundConfig);
+
+    // Track the active sound
+    this.activeSounds.set(soundKey, sound);
+
+    // Update last played time
+    if (soundSettings) {
+      soundSettings.lastPlayed = now;
+    }
+
+    // Clean up when sound finishes (don't destroy, just remove from active sounds)
+    sound.once('complete', () => {
+      this.activeSounds.delete(soundKey);
+    });
+
+    return sound;
+  }
+
+  async create() {
+    console.log('🎮 GameScene starting...');
+
+    // Initialize sound system
+    this.initializeSoundSystem();
+
+    // Create background
     this.createBackground();
 
-    // Create animations for character
+    // Create character animations
     this.createCharacterAnimations();
 
-    // Create player at center of world (0, 0)
+    // Create bullet textures
+    this.createBulletTextures();
+
+    // Create walls
+    this.createWalls();
+
+    if (this.isMultiplayer) {
+      // MULTIPLAYER MODE
+      await this.setupMultiplayer();
+    } else {
+      // SINGLE-PLAYER MODE (original code)
+      this.setupSinglePlayer();
+    }
+
+    // Common UI
+    this.createUI();
+    this.createMinimap();
+
+    // Session tracking
+    this.sessionStartTime = this.time.now;
+
+    // Effects
+    this.screenEffects = new ScreenEffects(this);
+
+    // Track bullet trails
+    this.bulletTrails = new Map();
+    this.enemyBulletTrails = new Map();
+
+    console.log('✅ GameScene ready');
+  }
+
+  setupSinglePlayer() {
+    // Original single-player setup
+    const Player = require('../entities/Player.js').default;
     this.player = new Player(this, 0, 0);
 
     // Camera follows player smoothly
@@ -152,9 +294,6 @@ export default class GameScene extends Phaser.Scene {
 
     // Set camera bounds to match world bounds
     this.cameras.main.setBounds(-1500, -1500, 3000, 3000);
-
-    // Create walls/obstacles
-    this.createWalls();
 
     // Create bullets group (object pooling)
     this.bullets = this.physics.add.group({
@@ -180,53 +319,348 @@ export default class GameScene extends Phaser.Scene {
     // Add collisions
     this.physics.add.collider(this.player.sprite, this.walls);
     this.physics.add.collider(this.bullets, this.walls, (bullet, wall) => {
-      // Destroy bullet on wall hit
       bullet.setActive(false);
       bullet.setVisible(false);
     });
     this.physics.add.collider(this.enemyBullets, this.walls, (bullet, wall) => {
-      // Destroy enemy bullet on wall hit
       bullet.setActive(false);
       bullet.setVisible(false);
     });
-
-    // Enemy bullet collision will be checked manually in update loop
-
-    // Create UI
-    this.createUI();
-
-    // FPS and position trackers removed for cleaner UI
-
-    // Create minimap
-    this.createMinimap();
 
     // Start enemy spawning
     this.startEnemySpawning();
 
     // Create weapon spawns
     this.createWeaponSpawns();
+  }
 
-    // Track session start time
-    this.sessionStartTime = this.time.now;
+  async setupMultiplayer() {
+    console.log('🌐 Setting up multiplayer...');
 
-    // Initialize screen effects
-    this.screenEffects = new ScreenEffects(this);
+    try {
+      // Create network manager
+      this.network = new NetworkManager('http://localhost:3001');
 
-    // Track bullet trails
-    this.bulletTrails = new Map(); // bullet -> trail effect
-    this.enemyBulletTrails = new Map(); // enemy bullet -> trail effect
+      // Setup event handlers BEFORE connecting
+      this.setupNetworkHandlers();
+
+      // Connect to server
+      const initData = await this.network.connect();
+      console.log('✅ Connected! My player ID:', initData.playerId);
+
+      this.myPlayerId = initData.playerId;
+
+      // Create local player (me)
+      this.localPlayer = new LocalPlayer(
+        this,
+        initData.player.x,
+        initData.player.y,
+        this.myPlayerId,
+        this.network
+      );
+
+      // Backward compatibility - some code still uses this.player
+      this.player = this.localPlayer;
+
+      // Create remote players (others already in game)
+      const otherPlayers = Object.values(initData.gameState.players).filter(
+        p => p.id !== this.myPlayerId
+      );
+
+      otherPlayers.forEach(playerData => {
+        this.addRemotePlayer({ ...playerData, id: playerData.id });
+      });
+
+      // Weapon pickups disabled for multiplayer (keeping it simple)
+      this.weaponPickups = [];
+
+      // Camera follows local player
+      this.cameras.main.startFollow(this.localPlayer.sprite, true, 0.08, 0.08);
+      this.cameras.main.setZoom(1);
+
+      // Set camera bounds to match world bounds
+      this.cameras.main.setBounds(-1500, -1500, 3000, 3000);
+
+      // Create bullets group (server creates bullets, client renders)
+      this.bullets = this.physics.add.group({
+        defaultKey: 'bullet',
+        maxSize: 100
+      });
+
+      // OPTIMIZATION: Map for O(1) bullet lookup (bulletId -> bulletSprite)
+      this.bulletMap = new Map();
+
+      // Add collision between local player and walls
+      this.physics.add.collider(this.localPlayer.sprite, this.walls);
+
+      console.log('✅ Multiplayer setup complete');
+
+    } catch (error) {
+      console.error('❌ Failed to setup multiplayer:', error);
+
+      // Show error to user
+      this.add.text(400, 300, 'Failed to connect to server\\nPlease check if server is running', {
+        fontSize: '20px',
+        color: '#ff0000',
+        align: 'center'
+      }).setOrigin(0.5);
+    }
+  }
+
+  setupNetworkHandlers() {
+    // Game state updates (20 times per second)
+    this.network.on('gameState', (state) => {
+      this.onGameState(state);
+    });
+
+    // Player joined
+    this.network.on('playerJoined', (playerData) => {
+      console.log('👋 Player joined:', playerData.id);
+      // Don't create a RemotePlayer for ourselves!
+      if (playerData.id !== this.myPlayerId) {
+        this.addRemotePlayer(playerData);
+      }
+    });
+
+    // Player left
+    this.network.on('playerLeft', (playerId) => {
+      console.log('👋 Player left:', playerId);
+      this.removeRemotePlayer(playerId);
+    });
+
+    // Player hit
+    this.network.on('playerHit', (data) => {
+      if (data.playerId === this.myPlayerId) {
+        // I got hit
+        this.localPlayer.takeDamage(data.damage);
+      } else {
+        // Another player got hit
+        const remotePlayer = this.remotePlayers.get(data.playerId);
+        if (remotePlayer) {
+          remotePlayer.onHit();
+        }
+      }
+    });
+
+    // Player killed
+    this.network.on('playerKilled', (data) => {
+      if (data.victimId === this.myPlayerId) {
+        // I died
+        this.localPlayer.onDeath();
+        this.kills = 0; // Reset kills on death
+      } else if (data.killerId === this.myPlayerId) {
+        // I got a kill
+        this.kills = data.killerKills;
+        this.localPlayer.onKill();
+        this.awardDOT(0.9); // 0.9 DOT per kill
+      }
+    });
+
+    // Player respawned
+    this.network.on('playerRespawned', (data) => {
+      if (data.playerId === this.myPlayerId) {
+        this.localPlayer.onRespawn(data.x, data.y);
+      } else {
+        const remotePlayer = this.remotePlayers.get(data.playerId);
+        if (remotePlayer) {
+          remotePlayer.onRespawn(data.x, data.y);
+        }
+      }
+    });
+
+    // Weapon picked up
+    this.network.on('weaponPickedUp', (data) => {
+      const pickup = this.weaponPickups[data.pickupId];
+      if (pickup) {
+        pickup.isAvailable = false;
+        pickup.sprite.setVisible(false);
+        pickup.shadow.setVisible(false);
+        pickup.glowCircle.setVisible(false);
+        pickup.ring.setVisible(false);
+
+        if (data.playerId === this.myPlayerId) {
+          this.playSoundSafe('pickup-sound', { volume: 0.5 });
+        }
+      }
+    });
+
+    // Weapon respawned
+    this.network.on('weaponRespawned', (pickupId) => {
+      const pickup = this.weaponPickups[pickupId];
+      if (pickup) {
+        pickup.respawn();
+      }
+    });
+
+    // Latency updates
+    this.network.on('latencyUpdate', (latency) => {
+      // Update latency display if you have one
+      // console.log(`Ping: ${latency}ms`);
+    });
+  }
+
+  onGameState(state) {
+    // Handle delta compression
+    if (state.isDelta) {
+      // Merge delta into full client state
+      if (!this.clientGameState) {
+        // No base state yet, wait for full state
+        return;
+      }
+
+      // Merge player updates
+      if (state.players) {
+        Object.assign(this.clientGameState.players, state.players);
+      }
+
+      // Replace bullets (they change every frame anyway)
+      if (state.bullets !== undefined) {
+        this.clientGameState.bullets = state.bullets;
+      }
+
+      // Merge weapon pickup changes
+      if (state.weaponPickups) {
+        state.weaponPickups.forEach(pickup => {
+          const idx = this.clientGameState.weaponPickups.findIndex(p => p.id === pickup.id);
+          if (idx !== -1) {
+            this.clientGameState.weaponPickups[idx] = pickup;
+          }
+        });
+      }
+
+      // Update tick
+      this.clientGameState.tick = state.tick;
+      this.clientGameState.timestamp = state.timestamp;
+
+      // Use merged state for rendering
+      state = this.clientGameState;
+    } else {
+      // Full state - store it
+      this.clientGameState = state;
+    }
+
+    // Update local player with server reconciliation
+    if (state.players[this.myPlayerId]) {
+      this.localPlayer.reconcileWithServer(state.players[this.myPlayerId]);
+    }
+
+    // Update remote players with new snapshots
+    Object.keys(state.players).forEach(playerId => {
+      if (playerId !== this.myPlayerId) {
+        const remotePlayer = this.remotePlayers.get(playerId);
+        if (remotePlayer) {
+          remotePlayer.addSnapshot(state.players[playerId]);
+        }
+      }
+    });
+
+    // Update bullets from server
+    this.updateBulletsFromServer(state.bullets || []);
+  }
+
+  addRemotePlayer(playerData) {
+    if (this.remotePlayers.has(playerData.id)) return;
+
+    const remotePlayer = new RemotePlayer(this, playerData);
+    this.remotePlayers.set(playerData.id, remotePlayer);
+
+    console.log(`✅ Added remote player: ${playerData.id}`);
+  }
+
+  removeRemotePlayer(playerId) {
+    const remotePlayer = this.remotePlayers.get(playerId);
+    if (remotePlayer) {
+      remotePlayer.destroy();
+      this.remotePlayers.delete(playerId);
+      console.log(`🗑️  Removed remote player: ${playerId}`);
+    }
+  }
+
+  updateBulletsFromServer(serverBullets) {
+    if (!this.bullets || !this.bulletMap) return;
+
+    // Track which bullets exist on server
+    const serverBulletIds = new Set(serverBullets.map(b => b.id));
+
+    // OPTIMIZED: Remove bullets that no longer exist on server (now O(n) instead of O(n²))
+    this.bulletMap.forEach((bulletSprite, bulletId) => {
+      if (!serverBulletIds.has(bulletId)) {
+        bulletSprite.setActive(false);
+        bulletSprite.setVisible(false);
+        this.bulletMap.delete(bulletId);
+      }
+    });
+
+    // OPTIMIZED: Add/update bullets from server (now O(1) lookup instead of O(n))
+    serverBullets.forEach(serverBullet => {
+      // O(1) lookup in Map
+      let bulletSprite = this.bulletMap.get(serverBullet.id);
+
+      if (!bulletSprite) {
+        // Create new bullet sprite
+        bulletSprite = this.bullets.get();
+        if (bulletSprite) {
+          bulletSprite.bulletId = serverBullet.id;
+          bulletSprite.setActive(true);
+          bulletSprite.setVisible(true);
+
+          // Set bullet texture based on weapon type
+          const textureKey = this.getBulletTexture(serverBullet.weaponType);
+          bulletSprite.setTexture(textureKey);
+
+          bulletSprite.setPosition(serverBullet.x, serverBullet.y);
+          bulletSprite.setDepth(5);
+
+          // Store in Map for fast lookup
+          this.bulletMap.set(serverBullet.id, bulletSprite);
+        }
+      } else {
+        // Update existing bullet position
+        bulletSprite.setPosition(serverBullet.x, serverBullet.y);
+      }
+    });
+  }
+
+  getBulletTexture(weaponType) {
+    const textureMap = {
+      'rapid': 'bullet',
+      'sniper': 'bullet-sniper',
+      'shotgun': 'bullet-shotgun',
+      'burst': 'bullet-burst'
+    };
+    return textureMap[weaponType] || 'bullet';
   }
 
   update(time, delta) {
-    // Update player
-    if (this.player) {
-      this.player.update();
+    if (this.isMultiplayer) {
+      // MULTIPLAYER MODE
 
-      // Check weapon pickups
-      this.checkWeaponPickups();
+      // Update local player (prediction + input sending)
+      if (this.localPlayer) {
+        this.localPlayer.update();
+      }
+
+      // Update remote players (interpolation)
+      this.remotePlayers.forEach(player => {
+        player.update();
+      });
+
+    } else {
+      // SINGLE-PLAYER MODE (original code)
+
+      if (this.player) {
+        this.player.update();
+        this.checkWeaponPickups();
+      }
+
+      this.enemies.forEach(enemy => {
+        if (enemy.sprite && enemy.sprite.active) {
+          enemy.update();
+        }
+      });
     }
 
-    // Update minimap
+    // Common updates
     this.updateMinimap();
 
     // Update survival time
@@ -234,15 +668,9 @@ export default class GameScene extends Phaser.Scene {
       this.survivalTime = Math.floor((this.time.now - this.sessionStartTime) / 1000);
     }
 
-    // Update enemies
-    this.enemies.forEach(enemy => {
-      if (enemy.sprite && enemy.sprite.active) {
-        enemy.update();
-      }
-    });
-
-    // Check player bullets hitting enemies
-    this.bullets.children.entries.forEach(bullet => {
+    // OPTIMIZATION: Update bullet trails and check range (collision detection handled by Phaser physics)
+    if (this.bullets) {
+      this.bullets.children.entries.forEach(bullet => {
       if (bullet.active) {
         // Update or create bullet trail
         if (!this.bulletTrails.has(bullet)) {
@@ -266,54 +694,15 @@ export default class GameScene extends Phaser.Scene {
             }
             bullet.setActive(false);
             bullet.setVisible(false);
-            return;
           }
         }
-
-        this.enemies.forEach(enemy => {
-          if (enemy.sprite && enemy.sprite.active) {
-            const distance = Phaser.Math.Distance.Between(
-              bullet.x, bullet.y,
-              enemy.sprite.x, enemy.sprite.y
-            );
-
-            // Check if bullet is close enough to hit (using sprite bounds)
-            if (distance < 30) {
-              // Clean up trail
-              if (this.bulletTrails.has(bullet)) {
-                this.bulletTrails.get(bullet).destroy();
-                this.bulletTrails.delete(bullet);
-              }
-
-              bullet.setActive(false);
-              bullet.setVisible(false);
-              const damage = bullet.weaponDamage || 1;
-
-              // Check if this will be a kill
-              const willKill = enemy.hp - damage <= 0;
-
-              // Apply damage
-              enemy.takeDamage(damage);
-
-              // Enhanced hit feedback with new impact effects
-              const weaponType = bullet.weaponType || 'rapid';
-              ImpactEffect.create(this, enemy.sprite.x, enemy.sprite.y, weaponType, willKill);
-              this.createHitFeedback(enemy.sprite.x, enemy.sprite.y, willKill);
-
-              // Track kills
-              if (willKill) {
-                this.kills++;
-                // Play death sound on kill
-                this.sound.play('death-sound', { volume: 0.4 });
-              }
-            }
-          }
-        });
       }
     });
+    }
 
-    // Check enemy bullets hitting player (same manual approach)
-    this.enemyBullets.children.entries.forEach(bullet => {
+    // OPTIMIZATION: Update enemy bullet trails (collision detection handled by Phaser physics)
+    if (this.enemyBullets) {
+      this.enemyBullets.children.entries.forEach(bullet => {
       if (bullet.active) {
         // Update or create bullet trail for enemy bullets
         if (!this.enemyBulletTrails.has(bullet)) {
@@ -322,38 +711,24 @@ export default class GameScene extends Phaser.Scene {
         }
         const trail = this.enemyBulletTrails.get(bullet);
         if (trail) trail.update();
-
-        if (this.player && !this.player.isInvulnerable) {
-          const distance = Phaser.Math.Distance.Between(
-            bullet.x, bullet.y,
-            this.player.sprite.x, this.player.sprite.y
-          );
-
-          // Check if bullet is close enough to hit
-          if (distance < 30) {
-            // Clean up trail
-            if (this.enemyBulletTrails.has(bullet)) {
-              this.enemyBulletTrails.get(bullet).destroy();
-              this.enemyBulletTrails.delete(bullet);
-            }
-            bullet.setActive(false);
-            bullet.setVisible(false);
-            this.player.takeDamage(1);
-          }
-        }
       }
     });
+    }
 
-    // Clean up bullets that are too far away
-    this.bullets.children.entries.forEach(bullet => {
+    // OPTIMIZATION: Cull bullets that are off-screen or too far away
+    const camera = this.cameras.main;
+    const cullDistance = 1000; // Pixels from camera center
+
+    if (this.bullets) {
+      this.bullets.children.entries.forEach(bullet => {
       if (bullet.active) {
-        const distance = Phaser.Math.Distance.Between(
-          this.player.sprite.x, this.player.sprite.y,
+        // Check if bullet is within culling distance of camera
+        const distanceFromCamera = Phaser.Math.Distance.Between(
+          camera.midPoint.x, camera.midPoint.y,
           bullet.x, bullet.y
         );
 
-        // Remove bullet if it's 800 pixels away from player
-        if (distance > 800) {
+        if (distanceFromCamera > cullDistance) {
           // Clean up trail
           if (this.bulletTrails.has(bullet)) {
             this.bulletTrails.get(bullet).destroy();
@@ -364,16 +739,18 @@ export default class GameScene extends Phaser.Scene {
         }
       }
     });
+    }
 
-    // Clean up enemy bullets
-    this.enemyBullets.children.entries.forEach(bullet => {
+    // OPTIMIZATION: Cull enemy bullets
+    if (this.enemyBullets) {
+      this.enemyBullets.children.entries.forEach(bullet => {
       if (bullet.active) {
-        const distance = Phaser.Math.Distance.Between(
-          this.player.sprite.x, this.player.sprite.y,
+        const distanceFromCamera = Phaser.Math.Distance.Between(
+          camera.midPoint.x, camera.midPoint.y,
           bullet.x, bullet.y
         );
 
-        if (distance > 800) {
+        if (distanceFromCamera > cullDistance) {
           // Clean up trail
           if (this.enemyBulletTrails.has(bullet)) {
             this.enemyBulletTrails.get(bullet).destroy();
@@ -384,6 +761,7 @@ export default class GameScene extends Phaser.Scene {
         }
       }
     });
+    }
   }
 
   createBackground() {
@@ -421,39 +799,88 @@ export default class GameScene extends Phaser.Scene {
   }
 
   generateBackgroundTextures(worldWidth, worldHeight) {
-    // Generate Pacific Cyan background with visible surface texture
+    // OPTIMIZATION: Check if texture already exists (cached)
+    if (this.textures.exists('deep-bg-texture')) {
+      console.log('✅ Using cached background texture');
+      return;
+    }
+
+    console.log('🎨 Generating background texture (one-time operation)...');
+    const startTime = performance.now();
+
+    // Generate Champagne Pink background with tile-like structure
     const baseGraphics = this.add.graphics();
 
-    // Create visible brightness variations across the surface using noise
-    const pixelSize = 8; // Larger blocks for more visible texture
+    // Tile settings
+    const tileSize = 64; // Size of each tile
+    const groutSize = 2; // Size of grout lines between tiles
 
-    for (let x = 0; x < worldWidth; x += pixelSize) {
-      for (let y = 0; y < worldHeight; y += pixelSize) {
-        // Get noise value for this position (range roughly -0.5 to 0.5)
-        const noiseValue = this.fbm(x * 0.005, y * 0.005, 3);
+    for (let x = 0; x < worldWidth; x += tileSize) {
+      for (let y = 0; y < worldHeight; y += tileSize) {
+        // Get noise value for this tile (range roughly -0.5 to 0.5)
+        const noiseValue = this.fbm(x * 0.002, y * 0.002, 2);
 
-        // Convert noise to brightness multiplier (0.7 to 1.3 range for visible variation)
-        const brightnessFactor = 1.0 + (noiseValue * 0.6);
+        // Convert noise to brightness multiplier (0.85 to 1.15 range for visible but subtle variation)
+        const brightnessFactor = 1.0 + (noiseValue * 0.3);
 
-        // Base Pacific Cyan: R=0x00, G=0xb4, B=0xd8
-        let r = Math.floor(0x00 * brightnessFactor);
-        let g = Math.floor(0xb4 * brightnessFactor);
-        let b = Math.floor(0xd8 * brightnessFactor);
+        // Base Champagne Pink: R=0xf4, G=0xc2, B=0xc2
+        let r = Math.floor(0xf4 * brightnessFactor);
+        let g = Math.floor(0xc2 * brightnessFactor);
+        let b = Math.floor(0xc2 * brightnessFactor);
 
         // Clamp to valid color range
         r = Math.max(0, Math.min(255, r));
         g = Math.max(0, Math.min(255, g));
         b = Math.max(0, Math.min(255, b));
 
-        const texturedColor = (r << 16) | (g << 8) | b;
+        const tileColor = (r << 16) | (g << 8) | b;
 
-        baseGraphics.fillStyle(texturedColor, 1);
-        baseGraphics.fillRect(x, y, pixelSize, pixelSize);
+        // Draw tile with slightly darker shade variation in some tiles
+        const randomDarken = Math.random() < 0.3 ? 0.95 : 1.0; // 30% of tiles are slightly darker
+        const finalR = Math.floor(r * randomDarken);
+        const finalG = Math.floor(g * randomDarken);
+        const finalB = Math.floor(b * randomDarken);
+        const finalColor = (finalR << 16) | (finalG << 8) | finalB;
+
+        // Draw tile
+        baseGraphics.fillStyle(finalColor, 1);
+        baseGraphics.fillRect(x, y, tileSize - groutSize, tileSize - groutSize);
+
+        // Draw grout lines (slightly darker champagne)
+        const groutColor = 0xe8b4b4; // Darker champagne for grout
+        baseGraphics.fillStyle(groutColor, 1);
+        // Right edge grout
+        baseGraphics.fillRect(x + tileSize - groutSize, y, groutSize, tileSize);
+        // Bottom edge grout
+        baseGraphics.fillRect(x, y + tileSize - groutSize, tileSize, groutSize);
+
+        // Add subtle surface texture within each tile
+        const innerPixelSize = 8;
+        for (let tx = 0; tx < tileSize - groutSize; tx += innerPixelSize) {
+          for (let ty = 0; ty < tileSize - groutSize; ty += innerPixelSize) {
+            const innerNoise = this.fbm((x + tx) * 0.01, (y + ty) * 0.01, 1);
+            const innerBrightness = 1.0 + (innerNoise * 0.1);
+
+            const innerR = Math.floor(finalR * innerBrightness);
+            const innerG = Math.floor(finalG * innerBrightness);
+            const innerB = Math.floor(finalB * innerBrightness);
+
+            const innerColor = (Math.max(0, Math.min(255, innerR)) << 16) |
+                             (Math.max(0, Math.min(255, innerG)) << 8) |
+                             Math.max(0, Math.min(255, innerB));
+
+            baseGraphics.fillStyle(innerColor, 1);
+            baseGraphics.fillRect(x + tx, y + ty, innerPixelSize, innerPixelSize);
+          }
+        }
       }
     }
 
     baseGraphics.generateTexture('deep-bg-texture', worldWidth, worldHeight);
     baseGraphics.destroy();
+
+    const endTime = performance.now();
+    console.log(`✅ Background texture generated in ${(endTime - startTime).toFixed(2)}ms`);
   }
 
   // Simple Perlin-like noise function using value noise
@@ -669,11 +1096,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   createAmbientParticles() {
-    // Create floating geometric particles for atmosphere
+    // OPTIMIZATION: Reduced from 30 particles with 90 tweens to 12 particles with 24 tweens
     this.ambientParticles = [];
-    const particleCount = 30;
-    const shapes = ['circle', 'triangle', 'diamond', 'square'];
-    const colors = [0x00b4d8, 0x33c9ed, 0x0077b6, 0xf5e4d7, 0x2a2b2a]; // Pacific Cyan variations, Champagne Pink, Jet
+    const particleCount = 12; // Reduced from 30
+    const shapes = ['circle', 'triangle', 'diamond'];
+    const colors = [0x00b4d8, 0x33c9ed, 0xf5e4d7]; // Reduced color palette
 
     for (let i = 0; i < particleCount; i++) {
       const x = Phaser.Math.Between(-1400, 1400);
@@ -695,10 +1122,6 @@ export default class GameScene extends Phaser.Scene {
           graphics.fillStyle(color, 1);
           graphics.fillTriangle(0, -size, -size, size, size, size);
           break;
-        case 'square':
-          graphics.fillStyle(color, 1);
-          graphics.fillRect(-size/2, -size/2, size, size);
-          break;
         case 'diamond':
           graphics.fillStyle(color, 1);
           graphics.fillTriangle(0, -size, size, 0, 0, size);
@@ -711,7 +1134,7 @@ export default class GameScene extends Phaser.Scene {
 
       particle = graphics;
 
-      // Slow floating animation
+      // OPTIMIZATION: Combine movement and rotation into single tween
       const duration = Phaser.Math.Between(8000, 15000);
       const targetX = x + Phaser.Math.Between(-200, 200);
       const targetY = y + Phaser.Math.Between(-200, 200);
@@ -720,26 +1143,9 @@ export default class GameScene extends Phaser.Scene {
         targets: particle,
         x: targetX,
         y: targetY,
-        duration: duration,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut'
-      });
-
-      // Gentle rotation
-      this.tweens.add({
-        targets: particle,
         angle: 360,
-        duration: Phaser.Math.Between(10000, 20000),
-        repeat: -1,
-        ease: 'Linear'
-      });
-
-      // Subtle alpha pulse
-      this.tweens.add({
-        targets: particle,
         alpha: Phaser.Math.FloatBetween(0.05, 0.4),
-        duration: Phaser.Math.Between(3000, 6000),
+        duration: duration,
         yoyo: true,
         repeat: -1,
         ease: 'Sine.easeInOut'
@@ -881,10 +1287,12 @@ export default class GameScene extends Phaser.Scene {
     ];
 
     wallConfigs.forEach(config => {
-      // Create graphics for each wall with pseudo-3D effect
+      // Create graphics for each wall with enhanced 3D beveled effect
       const graphics = this.add.graphics();
 
-      // Base wall color
+      const bevelSize = 8; // Size of the beveled edge
+
+      // Base wall color - Pacific Cyan
       graphics.fillStyle(wallColor, 1);
       graphics.fillRoundedRect(
         0,
@@ -894,24 +1302,69 @@ export default class GameScene extends Phaser.Scene {
         cornerRadius
       );
 
-      // Lighter top edge (simulated lighting from above) - lighter Pacific Cyan
-      graphics.fillStyle(0x33c9ed, 0.4);
-      graphics.fillRoundedRect(0, 0, config.width, 4, cornerRadius);
+      // TOP BEVEL - Create graduated highlight from top
+      // Brightest at the very top, fading down
+      for (let i = 0; i < bevelSize; i++) {
+        const intensity = 1 - (i / bevelSize); // 1.0 at top, 0.0 at bottom of bevel
+        const alpha = 0.6 * intensity; // Fade the alpha
+        graphics.fillStyle(0x90e0ef, alpha); // Very light cyan
+        graphics.fillRoundedRect(0, i, config.width, 1, cornerRadius);
+      }
 
-      // Darker bottom edge (depth shadow) - Honolulu Blue (darker cyan)
-      graphics.fillStyle(0x0077b6, 0.5);
-      graphics.fillRoundedRect(0, config.height - 4, config.width, 4, cornerRadius);
+      // BOTTOM BEVEL - Create graduated shadow from bottom
+      // Darkest at the very bottom, fading up
+      for (let i = 0; i < bevelSize; i++) {
+        const intensity = 1 - (i / bevelSize); // 1.0 at bottom, 0.0 at top of bevel
+        const alpha = 0.7 * intensity;
+        graphics.fillStyle(0x03045e, alpha); // Very dark blue
+        graphics.fillRoundedRect(0, config.height - bevelSize + i, config.width, 1, cornerRadius);
+      }
 
-      // Subtle left highlight - lighter Pacific Cyan
-      graphics.fillStyle(0x33c9ed, 0.3);
-      graphics.fillRoundedRect(0, 0, 3, config.height, cornerRadius);
+      // LEFT BEVEL - Bright highlight (light coming from top-left)
+      for (let i = 0; i < bevelSize; i++) {
+        const intensity = 1 - (i / bevelSize);
+        const alpha = 0.5 * intensity;
+        graphics.fillStyle(0xcaf0f8, alpha); // Lighter cyan
+        graphics.fillRoundedRect(i, 0, 1, config.height, cornerRadius);
+      }
 
-      // Subtle right shadow - Honolulu Blue
-      graphics.fillStyle(0x0077b6, 0.4);
-      graphics.fillRoundedRect(config.width - 3, 0, 3, config.height, cornerRadius);
+      // RIGHT BEVEL - Deep shadow
+      for (let i = 0; i < bevelSize; i++) {
+        const intensity = 1 - (i / bevelSize);
+        const alpha = 0.6 * intensity;
+        graphics.fillStyle(0x023e8a, alpha); // Dark blue
+        graphics.fillRoundedRect(config.width - bevelSize + i, 0, 1, config.height, cornerRadius);
+      }
 
-      // Add bright border for better contrast - Champagne Pink
-      graphics.lineStyle(2, 0xf5e4d7, 0.3);
+      // Add corner highlights for extra dimension
+      // Top-left corner - bright spot
+      graphics.fillStyle(0xffffff, 0.3);
+      graphics.fillCircle(cornerRadius, cornerRadius, cornerRadius / 2);
+
+      // Top-right corner - slight highlight
+      graphics.fillStyle(0xffffff, 0.15);
+      graphics.fillCircle(config.width - cornerRadius, cornerRadius, cornerRadius / 2);
+
+      // Bottom-left corner - slight shadow
+      graphics.fillStyle(0x000000, 0.15);
+      graphics.fillCircle(cornerRadius, config.height - cornerRadius, cornerRadius / 2);
+
+      // Bottom-right corner - deepest shadow
+      graphics.fillStyle(0x000000, 0.3);
+      graphics.fillCircle(config.width - cornerRadius, config.height - cornerRadius, cornerRadius / 2);
+
+      // Add subtle inner glow for plasticity
+      graphics.lineStyle(1, 0xade8f4, 0.4);
+      graphics.strokeRoundedRect(
+        bevelSize / 2,
+        bevelSize / 2,
+        config.width - bevelSize,
+        config.height - bevelSize,
+        cornerRadius
+      );
+
+      // Outer border for definition - Champagne Pink accent
+      graphics.lineStyle(2, 0xf5e4d7, 0.4);
       graphics.strokeRoundedRect(
         0,
         0,
@@ -923,36 +1376,51 @@ export default class GameScene extends Phaser.Scene {
       graphics.generateTexture(`wall_${config.x}_${config.y}`, config.width, config.height);
       graphics.destroy();
 
-      // Create drop shadow for wall first
-      const wallShadow = this.add.rectangle(
-        config.x + 3,
-        config.y + 3,
+      // OPTIMIZATION: Reduced from 5 shadow layers to 2 layers
+      const shadowOffsetX = 6;
+      const shadowOffsetY = 8;
+
+      // Single shadow layer with blur effect
+      const shadowGraphics = this.add.graphics();
+      shadowGraphics.fillStyle(0x000000, 0.2);
+      shadowGraphics.fillRoundedRect(
+        -config.width / 2,
+        -config.height / 2,
+        config.width + 4,
+        config.height + 4,
+        cornerRadius
+      );
+      shadowGraphics.setPosition(
+        config.x + shadowOffsetX + 2,
+        config.y + shadowOffsetY + 2
+      );
+      shadowGraphics.setDepth(-0.5);
+
+      // Ambient occlusion shadow (darker, tighter)
+      const aoShadow = this.add.graphics();
+      aoShadow.fillStyle(0x000000, 0.3);
+      aoShadow.fillRoundedRect(
+        -config.width / 2,
+        -config.height / 2,
         config.width,
         config.height,
-        0x2a2b2a, // Jet
-        0.3
+        cornerRadius
       );
-      wallShadow.setDepth(0);
+      aoShadow.setPosition(config.x + 2, config.y + 3);
+      aoShadow.setDepth(-0.3);
 
       // Create physics sprite with proper origin
       const wall = this.walls.create(config.x, config.y, `wall_${config.x}_${config.y}`);
       wall.setOrigin(0.5, 0.5); // Center the sprite origin
       wall.setDepth(1);
+      wall.body.immovable = true; // Walls should not move on collision
       wall.refreshBody();
     });
   }
 
   createUI() {
-    // HP Display - hearts only
-    this.hpText = this.add.text(10, 10, '', {
-      fontSize: '24px',
-      color: '#ffffff',
-      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-      padding: { x: 10, y: 6 }
-    }).setScrollFactor(0).setDepth(1000);
-
     // DOT counter
-    this.dotText = this.add.text(10, 50, '◎ 0.00', {
+    this.dotText = this.add.text(10, 10, '◎ 0.00', {
       fontSize: '24px',
       color: '#E6007A',
       backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -960,7 +1428,7 @@ export default class GameScene extends Phaser.Scene {
     }).setScrollFactor(0).setDepth(1000);
 
     // Kills counter
-    this.killsText = this.add.text(10, 90, '☠️ 0', {
+    this.killsText = this.add.text(10, 50, '☠️ 0', {
       fontSize: '20px',
       color: '#ffffff',
       backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -970,10 +1438,6 @@ export default class GameScene extends Phaser.Scene {
     // Update UI every frame
     this.events.on('update', () => {
       if (this.player) {
-        // HP hearts only
-        const hearts = '❤️'.repeat(this.player.hp);
-        this.hpText.setText(hearts);
-
         // DOT counter
         this.dotText.setText(`◎ ${this.dotEarned.toFixed(2)}`);
 
@@ -1020,8 +1484,8 @@ export default class GameScene extends Phaser.Scene {
       minimapX + minimapSize, minimapY + minimapSize / 2
     );
 
-    // Create player dot on minimap
-    this.minimapPlayer = this.add.circle(0, 0, 5, 0xFFFFFF);
+    // Create player dot on minimap (blue for local player)
+    this.minimapPlayer = this.add.circle(0, 0, 4, 0x0080FF); // Blue dot
     this.minimapPlayer.setScrollFactor(0);
     this.minimapPlayer.setDepth(1001);
 
@@ -1115,32 +1579,64 @@ export default class GameScene extends Phaser.Scene {
       minimapViewportHeight
     );
 
-    // Update enemy dots on minimap
-    // Clean up old enemy dots
-    while (this.minimapEnemies.length > this.enemies.length) {
-      const dot = this.minimapEnemies.pop();
-      if (dot) dot.destroy();
-    }
+    // Update enemy/player dots on minimap
+    if (this.isMultiplayer) {
+      // Multiplayer: Show other players (RemotePlayers)
+      const remotePlayers = Array.from(this.remotePlayers.values());
 
-    // Create new enemy dots if needed
-    while (this.minimapEnemies.length < this.enemies.length) {
-      const dot = this.add.circle(0, 0, 3, 0xFF0000); // Red dots for enemies
-      dot.setScrollFactor(0);
-      dot.setDepth(1001);
-      this.minimapEnemies.push(dot);
-    }
-
-    // Update enemy dot positions
-    this.enemies.forEach((enemy, index) => {
-      if (enemy.sprite && enemy.sprite.active && this.minimapEnemies[index]) {
-        const enemyMinimapX = x + ((enemy.sprite.x + worldWidth / 2) / worldWidth) * size;
-        const enemyMinimapY = y + ((enemy.sprite.y + worldHeight / 2) / worldHeight) * size;
-        this.minimapEnemies[index].setPosition(enemyMinimapX, enemyMinimapY);
-        this.minimapEnemies[index].setVisible(true);
-      } else if (this.minimapEnemies[index]) {
-        this.minimapEnemies[index].setVisible(false);
+      // Clean up old dots
+      while (this.minimapEnemies.length > remotePlayers.length) {
+        const dot = this.minimapEnemies.pop();
+        if (dot) dot.destroy();
       }
-    });
+
+      // Create new dots if needed
+      while (this.minimapEnemies.length < remotePlayers.length) {
+        const dot = this.add.circle(0, 0, 4, 0xFF0000); // Red dots for other players
+        dot.setScrollFactor(0);
+        dot.setDepth(1001);
+        this.minimapEnemies.push(dot);
+      }
+
+      // Update player dot positions
+      remotePlayers.forEach((remotePlayer, index) => {
+        if (remotePlayer.sprite && remotePlayer.hp > 0 && this.minimapEnemies[index]) {
+          const playerX = x + ((remotePlayer.sprite.x + worldWidth / 2) / worldWidth) * size;
+          const playerY = y + ((remotePlayer.sprite.y + worldHeight / 2) / worldHeight) * size;
+          this.minimapEnemies[index].setPosition(playerX, playerY);
+          this.minimapEnemies[index].setVisible(true);
+        } else if (this.minimapEnemies[index]) {
+          this.minimapEnemies[index].setVisible(false);
+        }
+      });
+    } else {
+      // Single-player: Show enemies
+      // Clean up old enemy dots
+      while (this.minimapEnemies.length > this.enemies.length) {
+        const dot = this.minimapEnemies.pop();
+        if (dot) dot.destroy();
+      }
+
+      // Create new enemy dots if needed
+      while (this.minimapEnemies.length < this.enemies.length) {
+        const dot = this.add.circle(0, 0, 4, 0xFF0000); // Red dots for enemies
+        dot.setScrollFactor(0);
+        dot.setDepth(1001);
+        this.minimapEnemies.push(dot);
+      }
+
+      // Update enemy dot positions
+      this.enemies.forEach((enemy, index) => {
+        if (enemy.sprite && enemy.sprite.active && this.minimapEnemies[index]) {
+          const enemyMinimapX = x + ((enemy.sprite.x + worldWidth / 2) / worldWidth) * size;
+          const enemyMinimapY = y + ((enemy.sprite.y + worldHeight / 2) / worldHeight) * size;
+          this.minimapEnemies[index].setPosition(enemyMinimapX, enemyMinimapY);
+          this.minimapEnemies[index].setVisible(true);
+        } else if (this.minimapEnemies[index]) {
+          this.minimapEnemies[index].setVisible(false);
+        }
+      });
+    }
 
     // Update weapon pickup dots on minimap
     // Clean up old weapon pickup dots
@@ -1210,6 +1706,15 @@ export default class GameScene extends Phaser.Scene {
   }
 
   startEnemySpawning() {
+    // OPTIMIZATION: Create physics group for enemies
+    this.enemySprites = this.physics.add.group({
+      runChildUpdate: false
+    });
+
+    // OPTIMIZATION: Setup collision handlers using Phaser physics (much faster than manual loops)
+    this.physics.add.overlap(this.bullets, this.enemySprites, this.bulletHitEnemy, null, this);
+    this.physics.add.overlap(this.enemyBullets, this.player.sprite, this.enemyBulletHitPlayer, null, this);
+
     // Spawn initial enemies
     this.spawnEnemy();
     this.spawnEnemy();
@@ -1254,8 +1759,8 @@ export default class GameScene extends Phaser.Scene {
     const enemy = new Enemy(this, x, y, this.player);
     this.enemies.push(enemy);
 
-    // Add enemy sprite to physics group for collisions
-    this.physics.add.existing(enemy.sprite);
+    // OPTIMIZATION: Add enemy sprite to physics group for collision detection
+    this.enemySprites.add(enemy.sprite);
     this.physics.add.collider(enemy.sprite, this.walls);
   }
 
@@ -1317,84 +1822,88 @@ export default class GameScene extends Phaser.Scene {
   }
 
   checkWeaponPickups() {
-    if (!this.player || !this.player.sprite) return;
+    // In multiplayer, use localPlayer; in singleplayer, use player
+    const playerToCheck = this.isMultiplayer ? this.localPlayer : this.player;
+    if (!playerToCheck || !playerToCheck.sprite) return;
 
-    this.weaponPickups.forEach(pickup => {
+    this.weaponPickups.forEach((pickup, index) => {
       if (!pickup.isAvailable) return;
 
       const distance = Phaser.Math.Distance.Between(
-        this.player.sprite.x,
-        this.player.sprite.y,
+        playerToCheck.sprite.x,
+        playerToCheck.sprite.y,
         pickup.sprite.x,
         pickup.sprite.y
       );
 
-      // Magnetic pull effect when close
-      if (distance < 100 && distance > 40) {
+      // Magnetic pull effect when close (only in single-player)
+      if (!this.isMultiplayer && distance < 100 && distance > 40) {
         const angle = Phaser.Math.Angle.Between(
           pickup.sprite.x,
           pickup.sprite.y,
-          this.player.sprite.x,
-          this.player.sprite.y
+          playerToCheck.sprite.x,
+          playerToCheck.sprite.y
         );
 
         const pullStrength = (100 - distance) / 100; // Stronger when closer
         const pullX = Math.cos(angle) * pullStrength * 3;
         const pullY = Math.sin(angle) * pullStrength * 3;
 
+        // OPTIMIZATION: Update only the 4 visual elements (sprite, glow, ring, shadow)
         pickup.sprite.x += pullX;
         pickup.sprite.y += pullY;
         pickup.glowCircle.x = pickup.sprite.x;
         pickup.glowCircle.y = pickup.sprite.y;
-        pickup.outerRing.x = pickup.sprite.x;
-        pickup.outerRing.y = pickup.sprite.y;
-        pickup.innerRing.x = pickup.sprite.x;
-        pickup.innerRing.y = pickup.sprite.y;
-        pickup.hexFrame.x = pickup.sprite.x;
-        pickup.hexFrame.y = pickup.sprite.y;
-        pickup.scanLines.forEach(line => {
-          line.x += pullX;
-          line.y += pullY;
-        });
+        pickup.ring.x = pickup.sprite.x;
+        pickup.ring.y = pickup.sprite.y;
+        pickup.shadow.x += pullX;
+        pickup.shadow.y += pullY;
       }
 
-      // Pickup range
+      // Auto-pickup when close
       if (distance < 40) {
-        const newWeaponType = pickup.pickup();
-        if (newWeaponType) {
-          // Play pickup sound
-          this.sound.play('pickup-sound', { volume: 0.5 });
+        if (this.isMultiplayer) {
+          // MULTIPLAYER: Tell server we want to pick this up
+          this.network.pickupWeapon(index);
+          // Server will broadcast weaponPickedUp event to all players
+        } else {
+          // SINGLE-PLAYER: Original pickup logic
+          const newWeaponType = pickup.pickup();
+          if (newWeaponType) {
+            // Play pickup sound
+            this.playSoundSafe('pickup-sound', { volume: 0.5 });
 
-          // Drop current weapon at player's position
-          const droppedType = this.player.switchWeapon(newWeaponType);
+            // Drop current weapon at player's position
+            const droppedType = playerToCheck.switchWeapon(newWeaponType);
 
-          // Enhanced weapon switch visual effects
-          WeaponSwitchEffect.create(this, this.player.sprite, newWeaponType);
+            // Enhanced weapon switch visual effects
+            WeaponSwitchEffect.create(this, playerToCheck.sprite, newWeaponType);
 
-          // Popup text
-          const pickupText = this.add.text(
-            this.player.sprite.x,
-            this.player.sprite.y - 50,
-            `${newWeaponType.toUpperCase()} ACQUIRED!`,
-            {
-              fontSize: '24px',
-              color: '#00FF00',
-              fontWeight: 'bold',
-              stroke: '#000000',
-              strokeThickness: 4
-            }
-          ).setOrigin(0.5).setDepth(1000);
+            // Popup text
+            const pickupText = this.add.text(
+              playerToCheck.sprite.x,
+              playerToCheck.sprite.y - 50,
+              `${newWeaponType.toUpperCase()} ACQUIRED!`,
+              {
+                fontSize: '24px',
+                color: '#00FF00',
+                fontWeight: 'bold',
+                stroke: '#000000',
+                strokeThickness: 4
+              }
+            ).setOrigin(0.5).setDepth(1000);
 
-          this.tweens.add({
-            targets: pickupText,
-            y: this.player.sprite.y - 80,
-            alpha: 0,
-            duration: 1000,
-            ease: 'Power2',
-            onComplete: () => pickupText.destroy()
-          });
+            this.tweens.add({
+              targets: pickupText,
+              y: playerToCheck.sprite.y - 80,
+              alpha: 0,
+              duration: 1000,
+              ease: 'Power2',
+              onComplete: () => pickupText.destroy()
+            });
 
-          console.log(`🔄 Picked up ${newWeaponType}, dropped ${droppedType}`);
+            console.log(`🔄 Picked up ${newWeaponType}, dropped ${droppedType}`);
+          }
         }
       }
     });
@@ -1481,6 +1990,57 @@ export default class GameScene extends Phaser.Scene {
         onComplete: () => killText.destroy()
       });
     }
+  }
+
+  // OPTIMIZATION: Phaser physics collision handlers (replaces manual loops)
+  bulletHitEnemy(bullet, enemySprite) {
+    if (!bullet.active || !enemySprite.active) return;
+
+    const enemy = enemySprite.enemyRef;
+    if (!enemy) return;
+
+    // Clean up trail
+    if (this.bulletTrails.has(bullet)) {
+      this.bulletTrails.get(bullet).destroy();
+      this.bulletTrails.delete(bullet);
+    }
+
+    bullet.setActive(false);
+    bullet.setVisible(false);
+    const damage = bullet.weaponDamage || 1;
+
+    // Check if this will be a kill
+    const willKill = enemy.hp - damage <= 0;
+
+    // Apply damage
+    enemy.takeDamage(damage);
+
+    // Enhanced hit feedback with new impact effects
+    const weaponType = bullet.weaponType || 'rapid';
+    ImpactEffect.create(this, enemySprite.x, enemySprite.y, weaponType, willKill);
+    this.createHitFeedback(enemySprite.x, enemySprite.y, willKill);
+
+    // Track kills
+    if (willKill) {
+      this.kills++;
+      // Play death sound on kill
+      this.playSoundSafe('death-sound', { volume: 0.4 });
+    }
+  }
+
+  enemyBulletHitPlayer(playerSprite, bullet) {
+    if (!bullet.active) return;
+    if (this.player.isInvulnerable) return;
+
+    // Clean up trail
+    if (this.enemyBulletTrails.has(bullet)) {
+      this.enemyBulletTrails.get(bullet).destroy();
+      this.enemyBulletTrails.delete(bullet);
+    }
+
+    bullet.setActive(false);
+    bullet.setVisible(false);
+    this.player.takeDamage(1);
   }
 }
 
